@@ -1,0 +1,200 @@
+# =============================================================================
+# FW Migrate App - Docker Compose Configuration
+# =============================================================================
+#
+# Port Allocation:
+# - FW Migrate App: 3004, PostgreSQL: 5436, Redis: 6383
+#
+# Network: 172.21.0.0/24 (FW Migrate dedicated subnet)
+# - postgres: 172.21.0.10
+# - redis:    172.21.0.11
+# - app:      172.21.0.12
+# =============================================================================
+
+services:
+  fwmigrate-postgres:
+    image: postgres:16.15-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    container_name: fwmigrate-postgres
+    hostname: fwmigrate-postgres
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+      - FOWNER
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}
+      POSTGRES_DB: fwmigrate
+      # App-specific user password (required — no fallback to superuser)
+      FWMIGRATE_DB_PASSWORD: ${FWMIGRATE_DB_PASSWORD:?FWMIGRATE_DB_PASSWORD required in .env}
+    ports:
+      - "127.0.0.1:5436:5432"
+    volumes:
+      - fwmigrate-postgres-data:/var/lib/postgresql/data
+      - ./postgres/init-user.sh:/docker-entrypoint-initdb.d/10-init-user.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d fwmigrate"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      fwmigrate-network:
+        ipv4_address: 172.21.0.10
+    restart: "no"
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+          pids: 200
+        reservations:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+        compress: "true"
+
+  fwmigrate-redis:
+    image: redis:8.10.0-alpine@sha256:978f0e01593e65eed801f2402944efcd936d43b5027e4908a7897baf88ed6241
+    container_name: fwmigrate-redis
+    hostname: fwmigrate-redis
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    ports:
+      - "127.0.0.1:6383:6379"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required in .env}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD required in .env}
+    volumes:
+      - fwmigrate-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      fwmigrate-network:
+        ipv4_address: 172.21.0.11
+    restart: "no"
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+          pids: 200
+        reservations:
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+        compress: "true"
+
+  fwmigrate-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - DOCKER_BUILD=1
+    container_name: fwmigrate-app
+    hostname: fwmigrate-app
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=100m
+      - /app/.next/cache:size=200m
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://fwmigrate:${FWMIGRATE_DB_PASSWORD:?FWMIGRATE_DB_PASSWORD required in .env}@fwmigrate-postgres:5432/fwmigrate
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required in .env}@fwmigrate-redis:6379
+      - REDIS_HOST=fwmigrate-redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD required in .env}
+      - AUTH_SECRET=${AUTH_SECRET:?AUTH_SECRET required}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3004}
+      - AUTH_TRUST_HOST=true
+      # Ollama on the Docker host by default; point OLLAMA_HOST at any reachable Ollama
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:14b}
+      # LLM provider switch — "ollama" (default) or "claude" (host bridge)
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - CLAUDE_BRIDGE_URL=${CLAUDE_BRIDGE_URL:-http://host.docker.internal:7777}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-opus}
+      - CLAUDE_BRIDGE_TOKEN=${CLAUDE_BRIDGE_TOKEN:-}
+      # Optional external change-management system that approved rules are pushed to.
+      - CHANGE_MANAGER_API_URL=${CHANGE_MANAGER_API_URL:-http://host.docker.internal:3003}
+      - CHANGE_MANAGER_API_KEY=${CHANGE_MANAGER_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:3004:3000"
+    depends_on:
+      fwmigrate-postgres:
+        condition: service_healthy
+      fwmigrate-redis:
+        condition: service_healthy
+    networks:
+      fwmigrate-network:
+        ipv4_address: 172.21.0.12
+    restart: "no"
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1:3000/api/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2"
+          pids: 200
+        reservations:
+          memory: 1G
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+volumes:
+  fwmigrate-postgres-data:
+  fwmigrate-redis-data:
+
+networks:
+  fwmigrate-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/24

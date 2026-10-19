@@ -1,0 +1,237 @@
+#config-version=FG100F-7.2.6-FW-build1575-231219:opmode=0:vdom=0
+#conf_file_ver=41972704244741
+#buildno=1575
+#global_vdom=1
+config system interface
+    edit "port1"
+        set vdom "root"
+        set ip 198.51.100.1 255.255.255.252
+        set allowaccess ping https ssh
+        set type physical
+        set alias "WAN"
+        set role wan
+    next
+    edit "port2"
+        set vdom "root"
+        set ip 192.0.2.1 255.255.255.0
+        set allowaccess ping https ssh
+        set type physical
+        set alias "LAN"
+        set role lan
+    next
+    edit "port3"
+        set vdom "root"
+        set ip 203.0.113.1 255.255.255.0
+        set allowaccess ping
+        set type physical
+        set alias "DMZ"
+        set role dmz
+    next
+    edit "port4"
+        set vdom "root"
+        set status down
+        set type physical
+    next
+end
+config firewall address
+    edit "WEB-SRV-01"
+        set subnet 203.0.113.10 255.255.255.255
+    next
+    edit "WEB-SRV-02"
+        set subnet 203.0.113.11 255.255.255.255
+    next
+    edit "DB-SRV-01"
+        set subnet 192.0.2.50 255.255.255.255
+    next
+    edit "APP-SRV-01"
+        set subnet 192.0.2.60 255.255.255.255
+    next
+    edit "INTERNAL-NET"
+        set subnet 192.0.2.0 255.255.255.0
+    next
+    edit "DMZ-NET"
+        set subnet 203.0.113.0 255.255.255.0
+    next
+    edit "MGMT-HOST"
+        set subnet 192.0.2.100 255.255.255.255
+    next
+    edit "EXTERNAL-DNS"
+        set fqdn "dns.example.com"
+    next
+    edit "BRANCH-NET"
+        set subnet 198.51.100.64 255.255.255.192
+    next
+    edit "BACKUP-SRV"
+        set subnet 192.0.2.200 255.255.255.255
+    next
+end
+config firewall addrgrp
+    edit "WEB-SERVERS"
+        set member WEB-SRV-01 WEB-SRV-02
+    next
+    edit "ALL-SERVERS"
+        set member WEB-SRV-01 WEB-SRV-02 DB-SRV-01 APP-SRV-01
+    next
+    edit "MGMT-HOSTS"
+        set member MGMT-HOST BACKUP-SRV
+    next
+end
+config firewall service custom
+    edit "HTTPS-ALT"
+        set tcp-portrange 8443
+    next
+    edit "PGSQL"
+        set tcp-portrange 5432
+    next
+    edit "REDIS"
+        set tcp-portrange 6379
+    next
+    edit "APP-PORTS"
+        set tcp-portrange 3000-3010
+    next
+end
+config firewall policy
+    edit 1
+        set name "WAN-to-DMZ-HTTPS"
+        set srcintf "port1"
+        set dstintf "port3"
+        set srcaddr "all"
+        set dstaddr "WEB-SERVERS"
+        set action accept
+        set service HTTPS HTTP
+        set logtraffic all
+        set comments "Allow internet access to web servers"
+    next
+    edit 2
+        set name "WAN-to-DMZ-HTTPS-ALT"
+        set srcintf "port1"
+        set dstintf "port3"
+        set srcaddr "all"
+        set dstaddr "WEB-SRV-01"
+        set action accept
+        set service HTTPS-ALT
+        set logtraffic all
+    next
+    edit 3
+        set name "LAN-to-WAN-Web"
+        set srcintf "port2"
+        set dstintf "port1"
+        set srcaddr "INTERNAL-NET"
+        set dstaddr "all"
+        set action accept
+        set service HTTPS HTTP
+        set logtraffic utm
+    next
+    edit 4
+        set name "LAN-to-WAN-DNS"
+        set srcintf "port2"
+        set dstintf "port1"
+        set srcaddr "INTERNAL-NET"
+        set dstaddr "all"
+        set action accept
+        set service DNS
+        set logtraffic disable
+    next
+    edit 5
+        set name "LAN-to-WAN-Mail"
+        set srcintf "port2"
+        set dstintf "port1"
+        set srcaddr "INTERNAL-NET"
+        set dstaddr "all"
+        set action accept
+        set service SMTP SMTPS IMAPS
+        set logtraffic all
+    next
+    edit 6
+        set name "DMZ-to-LAN-DB"
+        set srcintf "port3"
+        set dstintf "port2"
+        set srcaddr "WEB-SERVERS"
+        set dstaddr "DB-SRV-01"
+        set action accept
+        set service PGSQL
+        set logtraffic all
+    next
+    edit 7
+        set name "DMZ-to-LAN-App"
+        set srcintf "port3"
+        set dstintf "port2"
+        set srcaddr "WEB-SERVERS"
+        set dstaddr "APP-SRV-01"
+        set action accept
+        set service APP-PORTS
+        set logtraffic all
+    next
+    edit 8
+        set name "MGMT-to-DMZ"
+        set srcintf "port2"
+        set dstintf "port3"
+        set srcaddr "MGMT-HOSTS"
+        set dstaddr "WEB-SERVERS"
+        set action accept
+        set service SSH HTTPS
+        set logtraffic all
+    next
+    edit 9
+        set name "MGMT-to-LAN-Servers"
+        set srcintf "port2"
+        set dstintf "port2"
+        set srcaddr "MGMT-HOST"
+        set dstaddr "ALL-SERVERS"
+        set action accept
+        set service SSH HTTPS REDIS
+        set logtraffic all
+    next
+    edit 10
+        set name "Branch-to-LAN"
+        set srcintf "port1"
+        set dstintf "port2"
+        set srcaddr "BRANCH-NET"
+        set dstaddr "INTERNAL-NET"
+        set action accept
+        set service ALL
+        set logtraffic all
+    next
+    edit 11
+        set name "Deny-DMZ-to-LAN"
+        set srcintf "port3"
+        set dstintf "port2"
+        set srcaddr "DMZ-NET"
+        set dstaddr "INTERNAL-NET"
+        set action deny
+        set logtraffic all
+        set comments "Default deny DMZ to LAN"
+    next
+    edit 12
+        set name "Disabled-Test-Rule"
+        set srcintf "port2"
+        set dstintf "port1"
+        set srcaddr "INTERNAL-NET"
+        set dstaddr "all"
+        set action accept
+        set service ALL
+        set status disable
+        set logtraffic disable
+        set comments "Disabled test rule"
+    next
+    edit 13
+        set name "LAN-to-DMZ-Backup"
+        set srcintf "port2"
+        set dstintf "port3"
+        set srcaddr "BACKUP-SRV"
+        set dstaddr "WEB-SERVERS"
+        set action accept
+        set service SSH
+        set logtraffic all
+    next
+    edit 14
+        set name "Deny-All-Default"
+        set srcintf "any"
+        set dstintf "any"
+        set srcaddr "all"
+        set dstaddr "all"
+        set action deny
+        set logtraffic all
+        set comments "Implicit deny all"
+    next
+end

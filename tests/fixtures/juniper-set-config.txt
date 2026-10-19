@@ -1,0 +1,112 @@
+## Last changed: 2025-11-15 08:30:00 UTC
+## Juniper SRX340 — JunOS 23.2R1
+
+set system host-name SRX-EDGE-01
+set system domain-name corp.example.com
+
+set interfaces ge-0/0/0 unit 0 family inet address 198.51.100.1/30
+set interfaces ge-0/0/0 description "WAN Uplink"
+set interfaces ge-0/0/1 unit 0 family inet address 192.0.2.1/24
+set interfaces ge-0/0/1 description "LAN"
+set interfaces ge-0/0/2 unit 0 family inet address 203.0.113.1/24
+set interfaces ge-0/0/2 description "DMZ"
+set interfaces ge-0/0/3 disable
+
+set security zones security-zone untrust interfaces ge-0/0/0.0
+set security zones security-zone trust interfaces ge-0/0/1.0
+set security zones security-zone dmz interfaces ge-0/0/2.0
+
+set security zones security-zone trust address-book address web-srv-01 203.0.113.10/32
+set security zones security-zone trust address-book address db-srv-01 192.0.2.50/32
+set security zones security-zone trust address-book address internal-net 192.0.2.0/24
+
+set security address-book global address web-srv-01 203.0.113.10/32
+set security address-book global address web-srv-02 203.0.113.11/32
+set security address-book global address db-srv-01 192.0.2.50/32
+set security address-book global address app-srv-01 192.0.2.60/32
+set security address-book global address internal-net 192.0.2.0/24
+set security address-book global address dmz-net 203.0.113.0/24
+set security address-book global address mgmt-host 192.0.2.100/32
+set security address-book global address branch-net 198.51.100.64/26
+
+set security address-book global address-set web-servers address web-srv-01
+set security address-book global address-set web-servers address web-srv-02
+set security address-book global address-set all-servers address web-srv-01
+set security address-book global address-set all-servers address web-srv-02
+set security address-book global address-set all-servers address db-srv-01
+set security address-book global address-set all-servers address app-srv-01
+
+set security policies from-zone untrust to-zone dmz policy Allow-Inbound-HTTPS match source-address any
+set security policies from-zone untrust to-zone dmz policy Allow-Inbound-HTTPS match destination-address web-servers
+set security policies from-zone untrust to-zone dmz policy Allow-Inbound-HTTPS match application junos-https
+set security policies from-zone untrust to-zone dmz policy Allow-Inbound-HTTPS match application junos-http
+set security policies from-zone untrust to-zone dmz policy Allow-Inbound-HTTPS then permit
+
+set security policies from-zone trust to-zone untrust policy Allow-LAN-Web match source-address internal-net
+set security policies from-zone trust to-zone untrust policy Allow-LAN-Web match destination-address any
+set security policies from-zone trust to-zone untrust policy Allow-LAN-Web match application junos-https
+set security policies from-zone trust to-zone untrust policy Allow-LAN-Web match application junos-http
+set security policies from-zone trust to-zone untrust policy Allow-LAN-Web then permit
+
+set security policies from-zone trust to-zone untrust policy Allow-LAN-DNS match source-address internal-net
+set security policies from-zone trust to-zone untrust policy Allow-LAN-DNS match destination-address any
+set security policies from-zone trust to-zone untrust policy Allow-LAN-DNS match application junos-dns-udp
+set security policies from-zone trust to-zone untrust policy Allow-LAN-DNS then permit
+
+set security policies from-zone dmz to-zone trust policy Allow-DMZ-to-DB match source-address web-servers
+set security policies from-zone dmz to-zone trust policy Allow-DMZ-to-DB match destination-address db-srv-01
+set security policies from-zone dmz to-zone trust policy Allow-DMZ-to-DB match application junos-pgsql
+set security policies from-zone dmz to-zone trust policy Allow-DMZ-to-DB then permit
+
+set security policies from-zone dmz to-zone trust policy Allow-DMZ-to-App match source-address web-servers
+set security policies from-zone dmz to-zone trust policy Allow-DMZ-to-App match destination-address app-srv-01
+set security policies from-zone dmz to-zone trust policy Allow-DMZ-to-App match application junos-http
+set security policies from-zone dmz to-zone trust policy Allow-DMZ-to-App then permit
+
+set security policies from-zone trust to-zone dmz policy MGMT-to-DMZ match source-address mgmt-host
+set security policies from-zone trust to-zone dmz policy MGMT-to-DMZ match destination-address web-servers
+set security policies from-zone trust to-zone dmz policy MGMT-to-DMZ match application junos-ssh
+set security policies from-zone trust to-zone dmz policy MGMT-to-DMZ match application junos-https
+set security policies from-zone trust to-zone dmz policy MGMT-to-DMZ then permit
+
+set security policies from-zone untrust to-zone trust policy Allow-Branch match source-address branch-net
+set security policies from-zone untrust to-zone trust policy Allow-Branch match destination-address internal-net
+set security policies from-zone untrust to-zone trust policy Allow-Branch match application any
+set security policies from-zone untrust to-zone trust policy Allow-Branch then permit
+
+set security policies from-zone dmz to-zone trust policy Deny-DMZ-to-LAN match source-address dmz-net
+set security policies from-zone dmz to-zone trust policy Deny-DMZ-to-LAN match destination-address internal-net
+set security policies from-zone dmz to-zone trust policy Deny-DMZ-to-LAN match application any
+set security policies from-zone dmz to-zone trust policy Deny-DMZ-to-LAN then deny
+
+set security policies from-zone trust to-zone untrust policy Allow-SMTP match source-address internal-net
+set security policies from-zone trust to-zone untrust policy Allow-SMTP match destination-address any
+set security policies from-zone trust to-zone untrust policy Allow-SMTP match application junos-smtp
+set security policies from-zone trust to-zone untrust policy Allow-SMTP then permit
+
+set security policies from-zone trust to-zone trust policy Allow-Internal-ICMP match source-address internal-net
+set security policies from-zone trust to-zone trust policy Allow-Internal-ICMP match destination-address internal-net
+set security policies from-zone trust to-zone trust policy Allow-Internal-ICMP match application junos-icmp-ping
+set security policies from-zone trust to-zone trust policy Allow-Internal-ICMP then permit
+set security policies from-zone trust to-zone trust policy Allow-Internal-ICMP description "Allow internal ICMP"
+
+set security policies global policy Deny-All match source-address any
+set security policies global policy Deny-All match destination-address any
+set security policies global policy Deny-All match application any
+set security policies global policy Deny-All then deny
+
+set security nat source rule-set LAN-NAT from zone trust
+set security nat source rule-set LAN-NAT to zone untrust
+set security nat source rule-set LAN-NAT rule PAT-Out match source-address 192.0.2.0/24
+set security nat source rule-set LAN-NAT rule PAT-Out then source-nat interface
+
+set security nat source rule-set DMZ-NAT from zone dmz
+set security nat source rule-set DMZ-NAT to zone untrust
+set security nat source rule-set DMZ-NAT rule DMZ-Out match source-address 203.0.113.0/24
+set security nat source rule-set DMZ-NAT rule DMZ-Out then source-nat pool DMZ-POOL
+
+set security nat destination rule-set DNAT-WEB from zone untrust
+set security nat destination rule-set DNAT-WEB rule Web-In match destination-address 198.51.100.10/32
+set security nat destination rule-set DNAT-WEB rule Web-In then destination-nat pool WEB-POOL
+
+set routing-options static route 0.0.0.0/0 next-hop 198.51.100.2

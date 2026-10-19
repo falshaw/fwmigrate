@@ -1,0 +1,328 @@
+{
+  "uid": "a1b2c3d4-0001-4000-8000-000000000001",
+  "name": "Network",
+  "from": 1,
+  "to": 12,
+  "total": 12,
+  "objects-dictionary": [
+    {
+      "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30",
+      "name": "Any",
+      "type": "CpmiAnyObject"
+    },
+    {
+      "uid": "obj-web-srv-01",
+      "name": "web-srv-01",
+      "type": "host",
+      "ipv4-address": "203.0.113.10"
+    },
+    {
+      "uid": "obj-web-srv-02",
+      "name": "web-srv-02",
+      "type": "host",
+      "ipv4-address": "203.0.113.11"
+    },
+    {
+      "uid": "obj-db-srv-01",
+      "name": "db-srv-01",
+      "type": "host",
+      "ipv4-address": "192.0.2.50"
+    },
+    {
+      "uid": "obj-app-srv-01",
+      "name": "app-srv-01",
+      "type": "host",
+      "ipv4-address": "192.0.2.60"
+    },
+    {
+      "uid": "obj-internal-net",
+      "name": "internal-net",
+      "type": "network",
+      "subnet4": "192.0.2.0",
+      "mask-length4": 24
+    },
+    {
+      "uid": "obj-dmz-net",
+      "name": "dmz-net",
+      "type": "network",
+      "subnet4": "203.0.113.0",
+      "mask-length4": 24
+    },
+    {
+      "uid": "obj-mgmt-host",
+      "name": "mgmt-host",
+      "type": "host",
+      "ipv4-address": "192.0.2.100"
+    },
+    {
+      "uid": "obj-branch-net",
+      "name": "branch-net",
+      "type": "network",
+      "subnet4": "198.51.100.64",
+      "mask-length4": 26
+    },
+    {
+      "uid": "grp-web-servers",
+      "name": "web-servers",
+      "type": "group",
+      "members": ["obj-web-srv-01", "obj-web-srv-02"]
+    },
+    {
+      "uid": "grp-all-servers",
+      "name": "all-servers",
+      "type": "group",
+      "members": [
+        "obj-web-srv-01",
+        "obj-web-srv-02",
+        "obj-db-srv-01",
+        "obj-app-srv-01"
+      ]
+    },
+    {
+      "uid": "svc-https",
+      "name": "https",
+      "type": "service-tcp",
+      "port": "443"
+    },
+    {
+      "uid": "svc-http",
+      "name": "http",
+      "type": "service-tcp",
+      "port": "80"
+    },
+    {
+      "uid": "svc-ssh",
+      "name": "ssh",
+      "type": "service-tcp",
+      "port": "22"
+    },
+    {
+      "uid": "svc-pgsql",
+      "name": "PostgreSQL",
+      "type": "service-tcp",
+      "port": "5432"
+    },
+    {
+      "uid": "svc-dns",
+      "name": "dns",
+      "type": "service-udp",
+      "port": "53"
+    },
+    {
+      "uid": "svc-smtp",
+      "name": "smtp",
+      "type": "service-tcp",
+      "port": "25"
+    },
+    {
+      "uid": "action-accept",
+      "name": "Accept",
+      "type": "RulebaseAction"
+    },
+    {
+      "uid": "action-drop",
+      "name": "Drop",
+      "type": "RulebaseAction"
+    },
+    {
+      "uid": "track-log",
+      "name": "Log",
+      "type": "Track"
+    },
+    {
+      "uid": "track-none",
+      "name": "None",
+      "type": "Track"
+    }
+  ],
+  "rulebase": [
+    {
+      "uid": "rule-001",
+      "type": "access-rule",
+      "name": "Allow-Inbound-HTTPS",
+      "rule-number": 1,
+      "enabled": true,
+      "source": [
+        { "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30", "name": "Any" }
+      ],
+      "destination": [{ "uid": "grp-web-servers", "name": "web-servers" }],
+      "service": [
+        { "uid": "svc-https", "name": "https" },
+        { "uid": "svc-http", "name": "http" }
+      ],
+      "action": { "uid": "action-accept", "name": "Accept" },
+      "track": { "type": { "uid": "track-log", "name": "Log" } },
+      "comments": "Allow inbound web traffic to DMZ servers"
+    },
+    {
+      "uid": "rule-002",
+      "type": "access-rule",
+      "name": "Allow-LAN-Web-Out",
+      "rule-number": 2,
+      "enabled": true,
+      "source": [{ "uid": "obj-internal-net", "name": "internal-net" }],
+      "destination": [
+        { "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30", "name": "Any" }
+      ],
+      "service": [
+        { "uid": "svc-https", "name": "https" },
+        { "uid": "svc-http", "name": "http" }
+      ],
+      "action": { "uid": "action-accept", "name": "Accept" },
+      "track": { "type": { "uid": "track-log", "name": "Log" } },
+      "comments": "Allow internal users to browse web"
+    },
+    {
+      "uid": "rule-003",
+      "type": "access-rule",
+      "name": "Allow-LAN-DNS",
+      "rule-number": 3,
+      "enabled": true,
+      "source": [{ "uid": "obj-internal-net", "name": "internal-net" }],
+      "destination": [
+        { "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30", "name": "Any" }
+      ],
+      "service": [{ "uid": "svc-dns", "name": "dns" }],
+      "action": { "uid": "action-accept", "name": "Accept" },
+      "track": { "type": { "uid": "track-none", "name": "None" } },
+      "comments": "Allow DNS resolution"
+    },
+    {
+      "uid": "rule-004",
+      "type": "access-rule",
+      "name": "Allow-DMZ-to-DB",
+      "rule-number": 4,
+      "enabled": true,
+      "source": [{ "uid": "grp-web-servers", "name": "web-servers" }],
+      "destination": [{ "uid": "obj-db-srv-01", "name": "db-srv-01" }],
+      "service": [{ "uid": "svc-pgsql", "name": "PostgreSQL" }],
+      "action": { "uid": "action-accept", "name": "Accept" },
+      "track": { "type": { "uid": "track-log", "name": "Log" } },
+      "comments": "Web servers to PostgreSQL database"
+    },
+    {
+      "uid": "rule-005",
+      "type": "access-rule",
+      "name": "Allow-MGMT-SSH",
+      "rule-number": 5,
+      "enabled": true,
+      "source": [{ "uid": "obj-mgmt-host", "name": "mgmt-host" }],
+      "destination": [{ "uid": "grp-all-servers", "name": "all-servers" }],
+      "service": [{ "uid": "svc-ssh", "name": "ssh" }],
+      "action": { "uid": "action-accept", "name": "Accept" },
+      "track": { "type": { "uid": "track-log", "name": "Log" } },
+      "comments": "Management SSH access to all servers"
+    },
+    {
+      "uid": "rule-006",
+      "type": "access-rule",
+      "name": "Allow-Branch-Access",
+      "rule-number": 6,
+      "enabled": true,
+      "source": [{ "uid": "obj-branch-net", "name": "branch-net" }],
+      "destination": [{ "uid": "obj-internal-net", "name": "internal-net" }],
+      "service": [
+        { "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30", "name": "Any" }
+      ],
+      "action": { "uid": "action-accept", "name": "Accept" },
+      "track": { "type": { "uid": "track-log", "name": "Log" } },
+      "comments": "Branch office full access to internal"
+    },
+    {
+      "uid": "rule-007",
+      "type": "access-rule",
+      "name": "Allow-LAN-SMTP",
+      "rule-number": 7,
+      "enabled": true,
+      "source": [{ "uid": "obj-internal-net", "name": "internal-net" }],
+      "destination": [
+        { "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30", "name": "Any" }
+      ],
+      "service": [{ "uid": "svc-smtp", "name": "smtp" }],
+      "action": { "uid": "action-accept", "name": "Accept" },
+      "track": { "type": { "uid": "track-log", "name": "Log" } },
+      "comments": "Allow outbound email"
+    },
+    {
+      "uid": "rule-008",
+      "type": "access-rule",
+      "name": "Deny-DMZ-to-LAN",
+      "rule-number": 8,
+      "enabled": true,
+      "source": [{ "uid": "obj-dmz-net", "name": "dmz-net" }],
+      "destination": [{ "uid": "obj-internal-net", "name": "internal-net" }],
+      "service": [
+        { "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30", "name": "Any" }
+      ],
+      "action": { "uid": "action-drop", "name": "Drop" },
+      "track": { "type": { "uid": "track-log", "name": "Log" } },
+      "comments": "Block remaining DMZ to LAN traffic"
+    },
+    {
+      "uid": "rule-009",
+      "type": "access-rule",
+      "name": "Disabled-Test-Rule",
+      "rule-number": 9,
+      "enabled": false,
+      "source": [
+        { "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30", "name": "Any" }
+      ],
+      "destination": [
+        { "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30", "name": "Any" }
+      ],
+      "service": [
+        { "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30", "name": "Any" }
+      ],
+      "action": { "uid": "action-accept", "name": "Accept" },
+      "track": { "type": { "uid": "track-none", "name": "None" } },
+      "comments": "Disabled test rule for troubleshooting"
+    },
+    {
+      "uid": "rule-010",
+      "type": "access-rule",
+      "name": "Disabled-Legacy",
+      "rule-number": 10,
+      "enabled": false,
+      "source": [{ "uid": "obj-internal-net", "name": "internal-net" }],
+      "destination": [{ "uid": "obj-dmz-net", "name": "dmz-net" }],
+      "service": [
+        { "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30", "name": "Any" }
+      ],
+      "action": { "uid": "action-accept", "name": "Accept" },
+      "track": { "type": { "uid": "track-none", "name": "None" } },
+      "comments": "Old legacy rule - disabled"
+    },
+    {
+      "uid": "rule-011",
+      "type": "access-rule",
+      "name": "Allow-DMZ-to-App",
+      "rule-number": 11,
+      "enabled": true,
+      "source": [{ "uid": "grp-web-servers", "name": "web-servers" }],
+      "destination": [{ "uid": "obj-app-srv-01", "name": "app-srv-01" }],
+      "service": [{ "uid": "svc-https", "name": "https" }],
+      "action": { "uid": "action-accept", "name": "Accept" },
+      "track": { "type": { "uid": "track-log", "name": "Log" } },
+      "comments": "Web servers to application server"
+    },
+    {
+      "uid": "rule-012",
+      "type": "access-rule",
+      "name": "Deny-All",
+      "rule-number": 12,
+      "enabled": true,
+      "source": [
+        { "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30", "name": "Any" }
+      ],
+      "destination": [
+        { "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30", "name": "Any" }
+      ],
+      "service": [
+        { "uid": "97aeb369-9aea-11d5-bd16-0090272ccb30", "name": "Any" }
+      ],
+      "action": { "uid": "action-drop", "name": "Drop" },
+      "track": { "type": { "uid": "track-log", "name": "Log" } },
+      "comments": "Default deny all"
+    }
+  ]
+}

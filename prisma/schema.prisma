@@ -1,0 +1,412 @@
+// FW Migrate - AI-Powered Firewall Migration Platform
+// Copyright (c) 2026 Nick Falshaw
+// SPDX-License-Identifier: MIT
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+enum Role {
+  ADMIN
+  CONSULTANT
+  VIEWER
+}
+
+enum FirewallVendor {
+  PALO_ALTO
+  CISCO_ASA
+  CISCO_FTD
+  CHECKPOINT
+  FORTINET
+  JUNIPER_SRX
+  SOPHOS
+  SONICWALL
+  WATCHGUARD
+  PFSENSE
+  MIKROTIK
+}
+
+enum BatchStatus {
+  pending
+  running
+  completed
+  failed
+  cancelled
+}
+
+enum ProjectStatus {
+  CREATED
+  IMPORTING
+  PARSING
+  PARSED
+  ANALYZING
+  ANALYZED
+  TRANSLATING
+  TRANSLATED
+  REVIEWING
+  APPROVED
+  EXPORTED
+  ARCHIVED
+}
+
+enum RuleReviewStatus {
+  PENDING
+  APPROVED
+  MODIFIED
+  SKIPPED
+  FLAGGED
+}
+
+// =============================================================================
+// Core Models
+// =============================================================================
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  domain    String?
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users    User[]
+  projects MigrationProject[]
+  batches  BatchMigration[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  emailVerified  DateTime?
+  passwordHash   String?
+  name           String?
+  image          String?
+  role           Role      @default(CONSULTANT)
+  isActive       Boolean   @default(true)
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  organizationId String
+
+  organization     Organization       @relation(fields: [organizationId], references: [id])
+  accounts         Account[]
+  sessions         Session[]
+  createdProjects  MigrationProject[] @relation("ProjectCreator")
+  reviewedRules    TranslatedRule[]   @relation("RuleReviewer")
+  createdBatches   BatchMigration[]   @relation("BatchCreator")
+  projectVersions  ProjectVersion[]   @relation("VersionChanger")
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+// =============================================================================
+// Migration Project Models
+// =============================================================================
+
+model MigrationProject {
+  id             String         @id @default(cuid())
+  name           String
+  description    String?
+  sourceVendor   FirewallVendor
+  targetVendor   FirewallVendor
+  status         ProjectStatus  @default(CREATED)
+  organizationId String
+  createdById    String
+
+  // Counts
+  ruleCount       Int    @default(0)
+  objectCount     Int    @default(0)
+  natRuleCount    Int    @default(0)
+  parseConfidence Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization       Organization        @relation(fields: [organizationId], references: [id])
+  createdBy          User                @relation("ProjectCreator", fields: [createdById], references: [id])
+  sourceConfig       SourceConfig?
+  normalizedRules    NormalizedRule[]
+  normalizedObjects  NormalizedObject[]
+  normalizedNATRules NormalizedNATRule[]
+  analysisResults    AnalysisResult[]
+  translatedRules    TranslatedRule[]
+  zoneMappings       ZoneMapping[]
+  migrationPlan      MigrationPlan?
+  validationResults  ValidationResult[]
+  versions           ProjectVersion[]
+
+  @@index([organizationId])
+  @@index([createdById])
+  @@map("migration_projects")
+}
+
+model SourceConfig {
+  id         String @id @default(cuid())
+  projectId  String @unique
+  rawConfig  String
+  configType String // "xml", "text", "json"
+  fileSize   Int
+  lineCount  Int
+  parseLog   Json?
+
+  project   MigrationProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime         @default(now())
+
+  @@map("source_configs")
+}
+
+model NormalizedRule {
+  id        String @id @default(cuid())
+  projectId String
+  position  Int
+
+  // Normalized fields
+  name            String
+  enabled         Boolean @default(true)
+  action          String // permit, deny, drop
+  sources         Json // string[]
+  destinations    Json // string[]
+  services        Json // string[]
+  sourceZone      String?
+  destinationZone String?
+  description     String?
+  logging         Boolean @default(false)
+
+  // Vendor-specific preserved data
+  rawVendorData Json?
+
+  // Analysis flags
+  isUnused           Boolean @default(false)
+  isShadowed         Boolean @default(false)
+  isOverlyPermissive Boolean @default(false)
+  riskScore          Int?
+  analysisNotes      String?
+
+  // Relations
+  translatedRule TranslatedRule?
+  project        MigrationProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, position])
+  @@map("normalized_rules")
+}
+
+model NormalizedObject {
+  id            String @id @default(cuid())
+  projectId     String
+  objectType    String // address, address-group, service, service-group
+  name          String
+  members       Json // Resolved members
+  rawVendorData Json?
+
+  project MigrationProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, objectType])
+  @@map("normalized_objects")
+}
+
+model NormalizedNATRule {
+  id               String @id @default(cuid())
+  projectId        String
+  position         Int
+  natType          String // source, destination, static, dynamic-pat
+  originalSource   Json
+  translatedSource Json
+  originalDest     Json
+  translatedDest   Json
+  service          Json?
+  rawVendorData    Json?
+
+  project MigrationProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("normalized_nat_rules")
+}
+
+model AnalysisResult {
+  id             String  @id @default(cuid())
+  projectId      String
+  category       String // unused, shadowed, permissive, conflict, compliance
+  severity       String // info, warning, critical
+  ruleId         String?
+  title          String
+  description    String
+  recommendation String?
+
+  project MigrationProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("analysis_results")
+}
+
+model TranslatedRule {
+  id               String @id @default(cuid())
+  projectId        String
+  normalizedRuleId String @unique
+
+  // Target vendor config
+  targetConfig String
+  targetVendor FirewallVendor
+
+  // AI explanation
+  explanation String
+  warnings    Json?
+  confidence  Float
+
+  // Review
+  reviewStatus   RuleReviewStatus @default(PENDING)
+  reviewerNote   String?
+  manualOverride String?
+  reviewedAt     DateTime?
+  reviewedById   String?
+
+  normalizedRule NormalizedRule   @relation(fields: [normalizedRuleId], references: [id], onDelete: Cascade)
+  project        MigrationProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reviewedBy     User?            @relation("RuleReviewer", fields: [reviewedById], references: [id])
+
+  @@index([projectId, reviewStatus])
+  @@map("translated_rules")
+}
+
+model ZoneMapping {
+  id          String  @id @default(cuid())
+  projectId   String
+  sourceZone  String
+  targetZone  String
+  confidence  Float
+  aiReasoning String?
+  isConfirmed Boolean @default(false)
+
+  project MigrationProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("zone_mappings")
+}
+
+model MigrationPlan {
+  id        String @id @default(cuid())
+  projectId String @unique
+
+  phases         Json // Phase[]
+  preChecklist   Json // Checklist items
+  postChecklist  Json // Validation items
+  rollbackPlan   Json // Rollback steps
+  estimatedHours Float?
+
+  executiveSummary String?
+  riskAssessment   String?
+
+  project     MigrationProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  generatedAt DateTime         @default(now())
+
+  @@map("migration_plans")
+}
+
+// =============================================================================
+// FM-02: Batch Migration
+// =============================================================================
+
+model BatchMigration {
+  id             String      @id @default(cuid())
+  name           String
+  organizationId String
+  createdById    String
+  status         String      @default("pending") // pending, running, completed, failed, cancelled
+  configs        Json        // Array of batch config objects
+  results        Json?       // Array of batch result objects
+  totalConfigs   Int         @default(0)
+  completedCount Int         @default(0)
+  failedCount    Int         @default(0)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  createdBy    User         @relation("BatchCreator", fields: [createdById], references: [id])
+
+  @@index([organizationId])
+  @@map("batch_migrations")
+}
+
+// =============================================================================
+// FM-04: Config Validation
+// =============================================================================
+
+model ValidationResult {
+  id           String   @id @default(cuid())
+  projectId    String
+  status       String   // passed, failed
+  vendor       FirewallVendor
+  totalChecks  Int
+  errorCount   Int      @default(0)
+  warningCount Int      @default(0)
+  errors       Json?    // Array of error objects
+  warnings     Json?    // Array of warning objects
+  validatedAt  DateTime @default(now())
+
+  project MigrationProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("validation_results")
+}
+
+// =============================================================================
+// FM-06: Version History
+// =============================================================================
+
+model ProjectVersion {
+  id          String   @id @default(cuid())
+  projectId   String
+  version     Int
+  fromStatus  String
+  toStatus    String
+  snapshot    Json     // Snapshot of project state at transition
+  changedById String
+  createdAt   DateTime @default(now())
+
+  project   MigrationProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  changedBy User             @relation("VersionChanger", fields: [changedById], references: [id])
+
+  @@index([projectId])
+  @@map("project_versions")
+}
