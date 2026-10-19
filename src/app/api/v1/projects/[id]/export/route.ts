@@ -1,0 +1,579 @@
+/**
+ * FW Migrate - AI-Powered Firewall Migration Platform
+ * Copyright (c) 2026 Nick Falshaw
+ * SPDX-License-Identifier: MIT
+ */
+
+import { NextResponse } from "next/server";
+import { apiHandler } from "@/lib/apiHandler";
+import prisma from "@/lib/prisma";
+import { notFound, badRequest } from "@/lib/errors";
+import { logger } from "@/lib/logger";
+
+/**
+ * GET /api/v1/projects/[id]/export?type=config|plan|report
+ * type=config: Export translated firewall config in target vendor syntax.
+ * type=plan: Export a migration plan with checklists and rollback procedures.
+ * type=report: Export a migration summary report (FM-03) with stats, risk, and findings.
+ */
+export const GET = apiHandler(async ({ params, organizationId, req }) => {
+  const exportType = new URL(req.url).searchParams.get("type") || "config";
+
+  const project = await prisma.migrationProject.findUnique({
+    where: { id: params.id },
+    include: {
+      translatedRules: {
+        where: {
+          reviewStatus: { in: ["APPROVED", "MODIFIED"] },
+        },
+        include: {
+          normalizedRule: {
+            select: {
+              position: true,
+              name: true,
+              sources: true,
+              destinations: true,
+              services: true,
+              action: true,
+            },
+          },
+        },
+        orderBy: {
+          normalizedRule: { position: "asc" },
+        },
+      },
+      analysisResults: true,
+    },
+  });
+
+  if (!project) return notFound("Project not found");
+  if (project.organizationId !== organizationId)
+    return notFound("Project not found");
+
+  if (project.translatedRules.length === 0) {
+    return badRequest(
+      "No approved or modified rules to export. Review and approve rules first.",
+    );
+  }
+
+  const timestamp = new Date().toISOString();
+  const ruleCount = project.translatedRules.length;
+
+  if (exportType === "plan") {
+    const plan = generateMigrationPlan(project, timestamp);
+    const filename = `${project.name.replace(/[^a-zA-Z0-9_-]/g, "_")}_migration_plan.md`;
+
+    logger.info("Migration plan exported", {
+      projectId: params.id,
+      rulesExported: ruleCount,
+    });
+
+    return new NextResponse(plan, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+      },
+    });
+  }
+
+  if (exportType === "report") {
+    const report = generateMigrationReport(project, timestamp);
+    const filename = `${project.name.replace(/[^a-zA-Z0-9_-]/g, "_")}_migration_report.txt`;
+
+    logger.info("Migration report exported", {
+      projectId: params.id,
+      rulesExported: ruleCount,
+    });
+
+    return new NextResponse(report, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+      },
+    });
+  }
+
+  // Default: export config
+  const header = [
+    `! =============================================================================`,
+    `! FW Migrate Export -- ${project.name}`,
+    `! Source: ${project.sourceVendor} -> Target: ${project.targetVendor}`,
+    `! Rules exported: ${ruleCount}`,
+    `! Generated: ${timestamp}`,
+    `! =============================================================================`,
+    ``,
+  ].join("\n");
+
+  const configBlocks: string[] = [];
+
+  for (const translated of project.translatedRules) {
+    const ruleName = translated.normalizedRule?.name ?? "unnamed";
+    const position = translated.normalizedRule?.position ?? 0;
+
+    const config =
+      translated.reviewStatus === "MODIFIED" && translated.manualOverride
+        ? translated.manualOverride
+        : translated.targetConfig;
+
+    configBlocks.push(`! --- Rule ${position}: ${ruleName} ---`, config, ``);
+  }
+
+  const fullConfig = header + configBlocks.join("\n");
+
+  await prisma.migrationProject.update({
+    where: { id: params.id },
+    data: { status: "EXPORTED" },
+  });
+
+  const filename = `${project.name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${project.targetVendor}_export.txt`;
+
+  logger.info("Project exported", {
+    projectId: params.id,
+    rulesExported: ruleCount,
+  });
+
+  return new NextResponse(fullConfig, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+    },
+  });
+});
+
+function generateRollbackCommand(
+  vendor: string,
+  ruleName: string,
+  position: number,
+): string {
+  const safeName = ruleName.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 63);
+  switch (vendor) {
+    case "PALO_ALTO":
+      return `delete rulebase security rules "${safeName}"`;
+    case "CISCO_ASA":
+    case "CISCO_FTD":
+      return `no access-list OUTSIDE_IN extended permit ip any any\n! Replace with exact ACE from the forward config above`;
+    case "FORTINET":
+      return `config firewall policy\n    delete ${position}\nend`;
+    case "CHECKPOINT":
+      return `mgmt_cli delete access-rule layer "Network" name "${safeName}"`;
+    case "JUNIPER_SRX":
+      return `delete security policies from-zone untrust to-zone trust policy ${safeName}`;
+    default:
+      return `# Remove rule "${safeName}" (position ${position}) using vendor CLI`;
+  }
+}
+
+interface ProjectWithRules {
+  name: string;
+  sourceVendor: string;
+  targetVendor: string;
+  description: string | null;
+  translatedRules: Array<{
+    reviewStatus: string;
+    targetConfig: string;
+    manualOverride: string | null;
+    confidence: number;
+    normalizedRule: {
+      position: number;
+      name: string;
+      sources: unknown;
+      destinations: unknown;
+      services: unknown;
+      action: string;
+    } | null;
+  }>;
+  analysisResults: Array<{
+    category: string;
+    severity: string;
+    title: string;
+    description: string;
+    recommendation: string | null;
+  }>;
+}
+
+function generateMigrationPlan(
+  project: ProjectWithRules,
+  timestamp: string,
+): string {
+  const rules = project.translatedRules;
+  const issues = project.analysisResults;
+  const modified = rules.filter((r) => r.reviewStatus === "MODIFIED");
+  const avgConfidence =
+    rules.length > 0
+      ? Math.round(
+          (rules.reduce((sum, r) => sum + (r.confidence || 0), 0) /
+            rules.length) *
+            100,
+        )
+      : 0;
+
+  const sections: string[] = [];
+
+  // Header
+  sections.push(`# Migration Plan: ${project.name}`);
+  sections.push(``);
+  sections.push(`| Field | Value |`);
+  sections.push(`|-------|-------|`);
+  sections.push(`| Source Vendor | ${project.sourceVendor} |`);
+  sections.push(`| Target Vendor | ${project.targetVendor} |`);
+  sections.push(`| Rules Migrated | ${rules.length} |`);
+  sections.push(`| Manually Modified | ${modified.length} |`);
+  sections.push(`| Avg. Confidence | ${avgConfidence}% |`);
+  sections.push(`| Analysis Issues | ${issues.length} |`);
+  sections.push(`| Generated | ${timestamp} |`);
+  if (project.description) {
+    sections.push(`| Description | ${project.description} |`);
+  }
+  sections.push(``);
+
+  // Pre-migration checklist
+  sections.push(`## Pre-Migration Checklist`);
+  sections.push(``);
+  sections.push(
+    `- [ ] Back up current ${project.sourceVendor} running configuration`,
+  );
+  sections.push(
+    `- [ ] Back up current ${project.targetVendor} running configuration (if exists)`,
+  );
+  sections.push(`- [ ] Schedule maintenance window with stakeholders`);
+  sections.push(
+    `- [ ] Notify affected teams (NOC, security, application owners)`,
+  );
+  sections.push(
+    `- [ ] Verify ${project.targetVendor} device is reachable and management access is working`,
+  );
+  sections.push(`- [ ] Confirm required licenses are active on target device`);
+  sections.push(
+    `- [ ] Verify all referenced objects/groups exist on target device`,
+  );
+  sections.push(
+    `- [ ] Prepare rollback procedure (tested and documented below)`,
+  );
+  sections.push(`- [ ] Ensure out-of-band management access for rollback`);
+  sections.push(``);
+
+  // Analysis findings
+  if (issues.length > 0) {
+    sections.push(`## Analysis Findings (${issues.length})`);
+    sections.push(``);
+    sections.push(
+      `**Review these findings before proceeding with migration.**`,
+    );
+    sections.push(``);
+    for (const issue of issues) {
+      sections.push(`### [${issue.severity.toUpperCase()}] ${issue.title}`);
+      sections.push(``);
+      sections.push(`${issue.description}`);
+      if (issue.recommendation) {
+        sections.push(``);
+        sections.push(`**Recommendation:** ${issue.recommendation}`);
+      }
+      sections.push(``);
+    }
+  } else {
+    sections.push(`## Analysis Findings`);
+    sections.push(``);
+    sections.push(`No issues detected. All rules passed analysis checks.`);
+    sections.push(``);
+  }
+
+  // Rule migration steps
+  sections.push(`## Migration Steps`);
+  sections.push(``);
+  sections.push(
+    `Apply the following rules in order on the ${project.targetVendor} device:`,
+  );
+  sections.push(``);
+
+  for (const translated of rules) {
+    const rule = translated.normalizedRule;
+    const pos = rule?.position ?? 0;
+    const name = rule?.name ?? "unnamed";
+    const action = rule?.action ?? "unknown";
+    const wasModified = translated.reviewStatus === "MODIFIED";
+
+    sections.push(
+      `### Step ${pos}: ${name}${wasModified ? " (MANUALLY MODIFIED)" : ""}`,
+    );
+    sections.push(``);
+    sections.push(`| Property | Value |`);
+    sections.push(`|----------|-------|`);
+    sections.push(`| Action | ${action} |`);
+    const sources = Array.isArray(rule?.sources) ? rule.sources : [];
+    const destinations = Array.isArray(rule?.destinations)
+      ? rule.destinations
+      : [];
+    const services = Array.isArray(rule?.services) ? rule.services : [];
+    sections.push(`| Source | ${sources.join(", ") || "any"} |`);
+    sections.push(`| Destination | ${destinations.join(", ") || "any"} |`);
+    sections.push(`| Service | ${services.join(", ") || "any"} |`);
+    sections.push(
+      `| Confidence | ${Math.round((translated.confidence || 0) * 100)}% |`,
+    );
+    sections.push(``);
+
+    const config =
+      wasModified && translated.manualOverride
+        ? translated.manualOverride
+        : translated.targetConfig;
+
+    sections.push("```");
+    sections.push(config);
+    sections.push("```");
+    sections.push(``);
+    sections.push(`- [ ] Applied`);
+    sections.push(`- [ ] Verified (traffic flowing correctly)`);
+    sections.push(``);
+  }
+
+  // Post-migration verification
+  sections.push(`## Post-Migration Verification`);
+  sections.push(``);
+  sections.push(
+    `- [ ] Verify all ${rules.length} rules are active and in correct order`,
+  );
+  sections.push(
+    `- [ ] Check hit counts — ensure critical rules are matching traffic`,
+  );
+  sections.push(`- [ ] Verify logging is working (test with sample traffic)`);
+  sections.push(`- [ ] Confirm no unexpected denies in logs`);
+  sections.push(`- [ ] Test business-critical applications:`);
+  sections.push(`  - [ ] Web/HTTP(S) traffic`);
+  sections.push(`  - [ ] DNS resolution`);
+  sections.push(`  - [ ] VPN connectivity`);
+  sections.push(`  - [ ] Email flow`);
+  sections.push(`  - [ ] Application-specific traffic`);
+  sections.push(`- [ ] Monitor for 30 minutes for anomalies`);
+  sections.push(`- [ ] Get sign-off from application/business owners`);
+  sections.push(``);
+
+  // Rollback procedure with per-rule inverse commands (FM-05)
+  sections.push(`## Rollback Procedure`);
+  sections.push(``);
+  sections.push(`If issues are detected during or after migration:`);
+  sections.push(``);
+  sections.push(
+    `1. **Immediate:** Revert to the backed-up ${project.sourceVendor} configuration`,
+  );
+  sections.push(
+    `2. **On ${project.targetVendor}:** Execute the rollback commands below (reverse order)`,
+  );
+  sections.push(
+    `3. **Verify:** Confirm traffic is flowing through original path`,
+  );
+  sections.push(
+    `4. **Notify:** Inform stakeholders of rollback and schedule new window`,
+  );
+  sections.push(`5. **Document:** Record what failed and why for next attempt`);
+  sections.push(``);
+  sections.push(`**Maximum rollback time target:** 15 minutes`);
+  sections.push(``);
+  sections.push(`### Per-Rule Rollback Commands`);
+  sections.push(``);
+  sections.push(
+    `Execute in **reverse order** (bottom-up) to safely remove migrated rules:`,
+  );
+  sections.push(``);
+  const reversedRules = [...rules].reverse();
+  for (const translated of reversedRules) {
+    const rule = translated.normalizedRule;
+    const pos = rule?.position ?? 0;
+    const name = rule?.name ?? "unnamed";
+    sections.push(`**Rule ${pos}: ${name}**`);
+    sections.push("```");
+    sections.push(generateRollbackCommand(project.targetVendor, name, pos));
+    sections.push("```");
+    sections.push(``);
+  }
+  sections.push(`- [ ] All rollback commands executed`);
+  sections.push(`- [ ] Traffic verified flowing on original path`);
+  sections.push(``);
+
+  // Sign-off
+  sections.push(`## Sign-Off`);
+  sections.push(``);
+  sections.push(`| Role | Name | Date | Signature |`);
+  sections.push(`|------|------|------|-----------|`);
+  sections.push(`| Network Engineer | | | |`);
+  sections.push(`| Security Lead | | | |`);
+  sections.push(`| Change Manager | | | |`);
+  sections.push(``);
+  sections.push(`---`);
+  sections.push(
+    `*Generated by FW Migrate -- AI-Powered Firewall Migration Platform*`,
+  );
+  sections.push(`*FW Migrate -- ${timestamp}*`);
+
+  return sections.join("\n");
+}
+
+/**
+ * FM-03: Generate migration summary report with stats, risk assessment, and findings.
+ */
+function generateMigrationReport(
+  project: ProjectWithRules,
+  timestamp: string,
+): string {
+  const rules = project.translatedRules;
+  const issues = project.analysisResults;
+
+  const approved = rules.filter((r) => r.reviewStatus === "APPROVED").length;
+  const modified = rules.filter((r) => r.reviewStatus === "MODIFIED").length;
+  const avgConfidence =
+    rules.length > 0
+      ? (
+          rules.reduce((sum, r) => sum + (r.confidence || 0), 0) / rules.length
+        ).toFixed(2)
+      : "0.00";
+
+  // Confidence distribution
+  const highConf = rules.filter((r) => r.confidence >= 0.9).length;
+  const medConf = rules.filter(
+    (r) => r.confidence >= 0.7 && r.confidence < 0.9,
+  ).length;
+  const lowConf = rules.filter((r) => r.confidence < 0.7).length;
+
+  // Issue severity breakdown
+  const criticalIssues = issues.filter(
+    (i) => i.severity.toLowerCase() === "critical",
+  );
+  const highIssues = issues.filter((i) => i.severity.toLowerCase() === "high");
+  const mediumIssues = issues.filter(
+    (i) => i.severity.toLowerCase() === "medium",
+  );
+  const lowIssues = issues.filter((i) => i.severity.toLowerCase() === "low");
+  const infoIssues = issues.filter((i) => i.severity.toLowerCase() === "info");
+
+  // Issue category breakdown
+  const categories = new Map<string, number>();
+  for (const issue of issues) {
+    categories.set(issue.category, (categories.get(issue.category) || 0) + 1);
+  }
+
+  // Action breakdown
+  const actions = new Map<string, number>();
+  for (const r of rules) {
+    const action = r.normalizedRule?.action ?? "unknown";
+    actions.set(action, (actions.get(action) || 0) + 1);
+  }
+
+  // Risk score: simple heuristic
+  const riskPoints =
+    criticalIssues.length * 10 +
+    highIssues.length * 5 +
+    mediumIssues.length * 2 +
+    lowConf * 3;
+  const maxRisk = rules.length * 10;
+  const riskPercent =
+    maxRisk > 0 ? Math.min(100, Math.round((riskPoints / maxRisk) * 100)) : 0;
+  const riskLevel =
+    riskPercent >= 60 ? "HIGH" : riskPercent >= 30 ? "MEDIUM" : "LOW";
+
+  const s: string[] = [];
+
+  s.push("FIREWALL MIGRATION REPORT");
+  s.push("=".repeat(60));
+  s.push("");
+  s.push(`Project:        ${project.name}`);
+  if (project.description) s.push(`Description:    ${project.description}`);
+  s.push(`Source Vendor:   ${project.sourceVendor}`);
+  s.push(`Target Vendor:   ${project.targetVendor}`);
+  s.push(`Generated:       ${timestamp}`);
+  s.push("");
+
+  s.push("EXECUTIVE SUMMARY");
+  s.push("-".repeat(60));
+  s.push(`  Total Rules Migrated:    ${rules.length}`);
+  s.push(`  Auto-Approved:           ${approved}`);
+  s.push(`  Manually Modified:       ${modified}`);
+  s.push(
+    `  Average Confidence:      ${(parseFloat(avgConfidence) * 100).toFixed(0)}%`,
+  );
+  s.push(`  Migration Risk:          ${riskLevel} (${riskPercent}%)`);
+  s.push(`  Analysis Findings:       ${issues.length}`);
+  s.push("");
+
+  s.push("CONFIDENCE DISTRIBUTION");
+  s.push("-".repeat(60));
+  s.push(`  High (>=90%):   ${highConf} rules`);
+  s.push(`  Medium (70-89%):${medConf} rules`);
+  s.push(`  Low (<70%):     ${lowConf} rules`);
+  s.push("");
+
+  s.push("RULE ACTION BREAKDOWN");
+  s.push("-".repeat(60));
+  for (const [action, count] of actions) {
+    s.push(`  ${action.padEnd(20)} ${count}`);
+  }
+  s.push("");
+
+  if (issues.length > 0) {
+    s.push("ANALYSIS FINDINGS BY SEVERITY");
+    s.push("-".repeat(60));
+    if (criticalIssues.length > 0)
+      s.push(`  CRITICAL:  ${criticalIssues.length}`);
+    if (highIssues.length > 0) s.push(`  HIGH:      ${highIssues.length}`);
+    if (mediumIssues.length > 0) s.push(`  MEDIUM:    ${mediumIssues.length}`);
+    if (lowIssues.length > 0) s.push(`  LOW:       ${lowIssues.length}`);
+    if (infoIssues.length > 0) s.push(`  INFO:      ${infoIssues.length}`);
+    s.push("");
+
+    s.push("FINDINGS BY CATEGORY");
+    s.push("-".repeat(60));
+    for (const [cat, count] of categories) {
+      s.push(`  ${cat.padEnd(25)} ${count}`);
+    }
+    s.push("");
+
+    s.push("DETAILED FINDINGS");
+    s.push("-".repeat(60));
+    for (const issue of issues) {
+      s.push(`  [${issue.severity.toUpperCase()}] ${issue.title}`);
+      s.push(`    Category: ${issue.category}`);
+      s.push(`    ${issue.description}`);
+      if (issue.recommendation) {
+        s.push(`    Recommendation: ${issue.recommendation}`);
+      }
+      s.push("");
+    }
+  }
+
+  if (lowConf > 0) {
+    s.push("LOW-CONFIDENCE RULES (REQUIRE REVIEW)");
+    s.push("-".repeat(60));
+    for (const r of rules.filter((r) => r.confidence < 0.7)) {
+      const name = r.normalizedRule?.name ?? "unnamed";
+      const pos = r.normalizedRule?.position ?? 0;
+      s.push(
+        `  Rule ${pos}: ${name} — Confidence: ${Math.round(r.confidence * 100)}%`,
+      );
+    }
+    s.push("");
+  }
+
+  s.push("RISK ASSESSMENT");
+  s.push("-".repeat(60));
+  s.push(`  Overall Risk Level: ${riskLevel}`);
+  s.push(`  Risk Score:         ${riskPercent}% (${riskPoints} points)`);
+  s.push("");
+  s.push("  Risk Factors:");
+  if (criticalIssues.length > 0)
+    s.push(`    - ${criticalIssues.length} critical analysis findings`);
+  if (highIssues.length > 0)
+    s.push(`    - ${highIssues.length} high-severity findings`);
+  if (lowConf > 0)
+    s.push(`    - ${lowConf} rules with low translation confidence`);
+  if (modified > 0)
+    s.push(`    - ${modified} rules required manual modification`);
+  if (riskPoints === 0) s.push("    - No significant risk factors identified");
+  s.push("");
+
+  s.push("=".repeat(60));
+  s.push("Generated by FW Migrate — AI-Powered Firewall Migration Platform");
+  s.push(`FW Migrate — ${timestamp}`);
+
+  return s.join("\n");
+}

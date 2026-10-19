@@ -1,0 +1,338 @@
+<?xml version="1.0"?>
+<config version="11.1.0" urldb="paloaltonetworks">
+  <mgt-config>
+    <users>
+      <entry name="admin">
+        <phash>$1$encrypted</phash>
+      </entry>
+    </users>
+  </mgt-config>
+  <devices>
+    <entry name="localhost.localdomain">
+      <vsys>
+        <entry name="vsys1">
+          <zone>
+            <entry name="trust">
+              <network>
+                <layer3>
+                  <member>ethernet1/2</member>
+                </layer3>
+              </network>
+            </entry>
+            <entry name="untrust">
+              <network>
+                <layer3>
+                  <member>ethernet1/1</member>
+                </layer3>
+              </network>
+            </entry>
+            <entry name="dmz">
+              <network>
+                <layer3>
+                  <member>ethernet1/3</member>
+                </layer3>
+              </network>
+            </entry>
+          </zone>
+          <address>
+            <entry name="web-srv-01">
+              <ip-netmask>203.0.113.10/32</ip-netmask>
+              <description>Primary web server</description>
+            </entry>
+            <entry name="web-srv-02">
+              <ip-netmask>203.0.113.11/32</ip-netmask>
+              <description>Secondary web server</description>
+            </entry>
+            <entry name="db-srv-01">
+              <ip-netmask>192.0.2.50/32</ip-netmask>
+            </entry>
+            <entry name="app-srv-01">
+              <ip-netmask>192.0.2.60/32</ip-netmask>
+            </entry>
+            <entry name="internal-net">
+              <ip-netmask>192.0.2.0/24</ip-netmask>
+            </entry>
+            <entry name="dmz-net">
+              <ip-netmask>203.0.113.0/24</ip-netmask>
+            </entry>
+            <entry name="mgmt-host">
+              <ip-netmask>192.0.2.100/32</ip-netmask>
+            </entry>
+            <entry name="branch-net">
+              <ip-netmask>198.51.100.64/26</ip-netmask>
+            </entry>
+            <entry name="vpn-pool">
+              <ip-range>10.10.10.1-10.10.10.254</ip-range>
+            </entry>
+            <entry name="cdn-endpoint">
+              <fqdn>cdn.example.com</fqdn>
+            </entry>
+          </address>
+          <address-group>
+            <entry name="web-servers">
+              <static>
+                <member>web-srv-01</member>
+                <member>web-srv-02</member>
+              </static>
+            </entry>
+            <entry name="all-servers">
+              <static>
+                <member>web-srv-01</member>
+                <member>web-srv-02</member>
+                <member>db-srv-01</member>
+                <member>app-srv-01</member>
+              </static>
+            </entry>
+            <entry name="internal-hosts">
+              <static>
+                <member>internal-net</member>
+                <member>mgmt-host</member>
+              </static>
+            </entry>
+          </address-group>
+          <service>
+            <entry name="tcp-8443">
+              <protocol>
+                <tcp><port>8443</port></tcp>
+              </protocol>
+            </entry>
+            <entry name="tcp-pgsql">
+              <protocol>
+                <tcp><port>5432</port></tcp>
+              </protocol>
+            </entry>
+            <entry name="tcp-redis">
+              <protocol>
+                <tcp><port>6379</port></tcp>
+              </protocol>
+            </entry>
+            <entry name="tcp-app-range">
+              <protocol>
+                <tcp><port>3000-3010</port></tcp>
+              </protocol>
+            </entry>
+            <entry name="udp-syslog">
+              <protocol>
+                <udp><port>514</port></udp>
+              </protocol>
+            </entry>
+          </service>
+          <rulebase>
+            <security>
+              <rules>
+                <entry name="Allow-Inbound-HTTPS">
+                  <from><member>untrust</member></from>
+                  <to><member>dmz</member></to>
+                  <source><member>any</member></source>
+                  <destination><member>web-servers</member></destination>
+                  <service><member>application-default</member></service>
+                  <application><member>ssl</member><member>web-browsing</member></application>
+                  <action>allow</action>
+                  <log-end>yes</log-end>
+                  <description>Allow HTTPS to web servers from Internet</description>
+                </entry>
+                <entry name="Allow-Inbound-8443">
+                  <from><member>untrust</member></from>
+                  <to><member>dmz</member></to>
+                  <source><member>any</member></source>
+                  <destination><member>web-srv-01</member></destination>
+                  <service><member>tcp-8443</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                  <log-end>yes</log-end>
+                </entry>
+                <entry name="Allow-LAN-Web-Out">
+                  <from><member>trust</member></from>
+                  <to><member>untrust</member></to>
+                  <source><member>internal-net</member></source>
+                  <destination><member>any</member></destination>
+                  <service><member>application-default</member></service>
+                  <application><member>ssl</member><member>web-browsing</member></application>
+                  <action>allow</action>
+                  <log-end>yes</log-end>
+                </entry>
+                <entry name="Allow-LAN-DNS">
+                  <from><member>trust</member></from>
+                  <to><member>untrust</member></to>
+                  <source><member>internal-net</member></source>
+                  <destination><member>any</member></destination>
+                  <service><member>application-default</member></service>
+                  <application><member>dns</member></application>
+                  <action>allow</action>
+                  <log-end>no</log-end>
+                </entry>
+                <entry name="Allow-DMZ-to-DB">
+                  <from><member>dmz</member></from>
+                  <to><member>trust</member></to>
+                  <source><member>web-servers</member></source>
+                  <destination><member>db-srv-01</member></destination>
+                  <service><member>tcp-pgsql</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                  <log-end>yes</log-end>
+                  <description>Web servers to PostgreSQL</description>
+                </entry>
+                <entry name="Allow-DMZ-to-App">
+                  <from><member>dmz</member></from>
+                  <to><member>trust</member></to>
+                  <source><member>web-servers</member></source>
+                  <destination><member>app-srv-01</member></destination>
+                  <service><member>tcp-app-range</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                  <log-end>yes</log-end>
+                </entry>
+                <entry name="Allow-MGMT-to-DMZ">
+                  <from><member>trust</member></from>
+                  <to><member>dmz</member></to>
+                  <source><member>mgmt-host</member></source>
+                  <destination><member>web-servers</member></destination>
+                  <service><member>application-default</member></service>
+                  <application><member>ssh</member><member>ssl</member></application>
+                  <action>allow</action>
+                  <log-end>yes</log-end>
+                </entry>
+                <entry name="Allow-Branch-VPN">
+                  <from><member>untrust</member></from>
+                  <to><member>trust</member></to>
+                  <source><member>branch-net</member></source>
+                  <destination><member>internal-net</member></destination>
+                  <service><member>any</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                  <log-end>yes</log-end>
+                  <description>Branch office VPN access</description>
+                </entry>
+                <entry name="Deny-DMZ-to-LAN">
+                  <from><member>dmz</member></from>
+                  <to><member>trust</member></to>
+                  <source><member>dmz-net</member></source>
+                  <destination><member>internal-net</member></destination>
+                  <service><member>any</member></service>
+                  <application><member>any</member></application>
+                  <action>deny</action>
+                  <log-end>yes</log-end>
+                  <description>Block all other DMZ to LAN traffic</description>
+                </entry>
+                <entry name="Allow-Syslog">
+                  <from><member>any</member></from>
+                  <to><member>trust</member></to>
+                  <source><member>any</member></source>
+                  <destination><member>mgmt-host</member></destination>
+                  <service><member>udp-syslog</member></service>
+                  <application><member>syslog</member></application>
+                  <action>allow</action>
+                  <log-end>no</log-end>
+                </entry>
+                <entry name="Disabled-Test-Rule">
+                  <from><member>trust</member></from>
+                  <to><member>untrust</member></to>
+                  <source><member>any</member></source>
+                  <destination><member>any</member></destination>
+                  <service><member>any</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                  <disabled>yes</disabled>
+                  <log-end>no</log-end>
+                  <description>Disabled test rule</description>
+                </entry>
+                <entry name="Disabled-Debug">
+                  <from><member>trust</member></from>
+                  <to><member>dmz</member></to>
+                  <source><member>mgmt-host</member></source>
+                  <destination><member>any</member></destination>
+                  <service><member>any</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                  <disabled>yes</disabled>
+                  <log-end>yes</log-end>
+                </entry>
+                <entry name="Allow-ICMP-Internal">
+                  <from><member>trust</member></from>
+                  <to><member>trust</member></to>
+                  <source><member>internal-net</member></source>
+                  <destination><member>internal-net</member></destination>
+                  <service><member>application-default</member></service>
+                  <application><member>ping</member></application>
+                  <action>allow</action>
+                  <log-end>no</log-end>
+                </entry>
+                <entry name="Allow-VPN-Pool">
+                  <from><member>untrust</member></from>
+                  <to><member>trust</member></to>
+                  <source><member>vpn-pool</member></source>
+                  <destination><member>all-servers</member></destination>
+                  <service><member>any</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                  <log-end>yes</log-end>
+                </entry>
+                <entry name="Deny-All">
+                  <from><member>any</member></from>
+                  <to><member>any</member></to>
+                  <source><member>any</member></source>
+                  <destination><member>any</member></destination>
+                  <service><member>any</member></service>
+                  <application><member>any</member></application>
+                  <action>deny</action>
+                  <log-end>yes</log-end>
+                  <description>Default deny all</description>
+                </entry>
+              </rules>
+            </security>
+            <nat>
+              <rules>
+                <entry name="NAT-LAN-Outbound">
+                  <source-translation>
+                    <dynamic-ip-and-port>
+                      <interface-address>
+                        <interface>ethernet1/1</interface>
+                      </interface-address>
+                    </dynamic-ip-and-port>
+                  </source-translation>
+                  <to><member>untrust</member></to>
+                  <from><member>trust</member></from>
+                  <source><member>internal-net</member></source>
+                  <destination><member>any</member></destination>
+                </entry>
+                <entry name="NAT-DMZ-Static">
+                  <source-translation>
+                    <static-ip>
+                      <translated-address>198.51.100.10</translated-address>
+                    </static-ip>
+                  </source-translation>
+                  <to><member>untrust</member></to>
+                  <from><member>dmz</member></from>
+                  <source><member>web-srv-01</member></source>
+                  <destination><member>any</member></destination>
+                </entry>
+                <entry name="DNAT-Web-Inbound">
+                  <destination-translation>
+                    <translated-address>203.0.113.10</translated-address>
+                  </destination-translation>
+                  <to><member>dmz</member></to>
+                  <from><member>untrust</member></from>
+                  <source><member>any</member></source>
+                  <destination><member>198.51.100.10</member></destination>
+                </entry>
+                <entry name="NAT-VPN-Outbound">
+                  <source-translation>
+                    <dynamic-ip-and-port>
+                      <interface-address>
+                        <interface>ethernet1/1</interface>
+                      </interface-address>
+                    </dynamic-ip-and-port>
+                  </source-translation>
+                  <to><member>untrust</member></to>
+                  <from><member>trust</member></from>
+                  <source><member>vpn-pool</member></source>
+                  <destination><member>any</member></destination>
+                </entry>
+              </rules>
+            </nat>
+          </rulebase>
+        </entry>
+      </vsys>
+    </entry>
+  </devices>
+</config>

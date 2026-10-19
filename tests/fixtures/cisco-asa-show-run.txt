@@ -1,0 +1,94 @@
+: Saved
+:
+: Serial Number: FTX1234ABCD
+: Hardware:   ASA5525, 8192 MB RAM, CPU Xeon E3 2100 MHz
+:
+ASA Version 9.16(4)
+!
+hostname FW-EDGE-01
+domain-name corp.example.com
+enable password $sha512$5000$encrypted_hash
+!
+interface GigabitEthernet0/0
+ nameif outside
+ security-level 0
+ ip address 198.51.100.1 255.255.255.252
+!
+interface GigabitEthernet0/1
+ nameif inside
+ security-level 100
+ ip address 192.0.2.1 255.255.255.0
+!
+interface GigabitEthernet0/2
+ nameif dmz
+ security-level 50
+ ip address 203.0.113.1 255.255.255.0
+!
+interface GigabitEthernet0/3
+ shutdown
+ no nameif
+ no security-level
+ no ip address
+!
+object network WEB-SERVER-01
+ host 203.0.113.10
+object network WEB-SERVER-02
+ host 203.0.113.11
+object network DB-SERVER-01
+ host 192.0.2.50
+object network INTERNAL-SUBNET
+ subnet 192.0.2.0 255.255.255.0
+object network DMZ-SUBNET
+ subnet 203.0.113.0 255.255.255.0
+object network MGMT-HOST
+ host 192.0.2.100
+!
+object-group network WEB-SERVERS
+ network-object host 203.0.113.10
+ network-object host 203.0.113.11
+object-group network TRUSTED-NETS
+ network-object 192.0.2.0 255.255.255.0
+ group-object WEB-SERVERS
+!
+object-group service WEB-PORTS tcp
+ port-object eq https
+ port-object eq http
+ port-object eq 8443
+object-group service MGMT-PORTS tcp
+ port-object eq ssh
+ port-object eq 3389
+object-group service DNS-PORTS udp
+ port-object eq domain
+object-group service HIGH-PORTS tcp
+ port-object range 8000 8999
+!
+access-list OUTSIDE_IN remark === Inbound from Internet ===
+access-list OUTSIDE_IN extended permit tcp any object-group WEB-SERVERS eq https
+access-list OUTSIDE_IN extended permit tcp any object-group WEB-SERVERS eq http
+access-list OUTSIDE_IN extended permit tcp any host 203.0.113.10 eq 8443
+access-list OUTSIDE_IN extended deny ip any 192.0.2.0 255.255.255.0
+access-list OUTSIDE_IN extended deny ip any any log
+access-list INSIDE_OUT remark === Outbound from LAN ===
+access-list INSIDE_OUT extended permit tcp 192.0.2.0 255.255.255.0 any eq https
+access-list INSIDE_OUT extended permit tcp 192.0.2.0 255.255.255.0 any eq http
+access-list INSIDE_OUT extended permit udp 192.0.2.0 255.255.255.0 any eq domain
+access-list INSIDE_OUT extended permit tcp 192.0.2.0 255.255.255.0 any eq smtp
+access-list INSIDE_OUT extended permit icmp 192.0.2.0 255.255.255.0 any
+access-list INSIDE_OUT extended deny ip any any log
+access-list DMZ_IN remark === DMZ to Internal ===
+access-list DMZ_IN extended permit tcp host 203.0.113.10 host 192.0.2.50 eq 5432
+access-list DMZ_IN extended permit tcp host 203.0.113.11 host 192.0.2.50 eq 5432
+access-list DMZ_IN extended deny ip 203.0.113.0 255.255.255.0 192.0.2.0 255.255.255.0 log
+access-list MGMT_ACL remark === Management Access ===
+access-list MGMT_ACL extended permit tcp host 192.0.2.100 any eq ssh
+access-list MGMT_ACL extended permit tcp host 192.0.2.100 host 203.0.113.10 eq 3389
+access-list MGMT_ACL extended deny ip any any
+!
+nat (inside,outside) dynamic interface
+nat (dmz,outside) static 198.51.100.10
+nat (inside,dmz) static 192.0.2.50 203.0.113.50
+!
+route outside 0.0.0.0 0.0.0.0 198.51.100.2 1
+route inside 10.0.0.0 255.0.0.0 192.0.2.2 1
+!
+: end

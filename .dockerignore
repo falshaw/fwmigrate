@@ -1,0 +1,45 @@
+node_modules
+.next
+.git
+.gitignore
+*.log
+.env
+.env.*
+!.env.example
+.env.local
+.env.*.local
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Tests + coverage
+tests
+e2e
+__tests__
+test-results
+playwright-report
+coverage
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Build artifacts
+.turbo
+.cache
+dist
+
+# Tooling
+scripts
+docs
+claudedocs
+*.md
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Editor/CI
+.vscode
+.idea
+.claude
+.github
