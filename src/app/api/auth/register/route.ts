@@ -8,7 +8,6 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { apiHandler } from "@/lib/apiHandler";
 import prisma from "@/lib/prisma";
-import { badRequest } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { registerSchema } from "@/lib/validators/auth";
 import type { RegisterInput } from "@/lib/validators/auth";

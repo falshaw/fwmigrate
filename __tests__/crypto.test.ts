@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 
 // Valid 64-char hex key (32 bytes)
 const TEST_ENCRYPTION_KEY =
