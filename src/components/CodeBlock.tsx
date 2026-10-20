@@ -59,6 +59,16 @@ export function highlightLine(line: string): ReactNode[] {
   return out;
 }
 
+/** Trim blank edges and the indent every line shares. */
+export function dedent(code: string): string[] {
+  const lines = code.replace(/\s+$/, "").replace(/^\n+/, "").split("\n");
+  const indents = lines
+    .filter((l) => l.trim())
+    .map((l) => (l.match(/^[ \t]*/)?.[0].length ?? 0));
+  const cut = indents.length ? Math.min(...indents) : 0;
+  return lines.map((l) => l.slice(cut));
+}
+
 export function CodeBlock({
   code,
   label,
@@ -70,7 +80,7 @@ export function CodeBlock({
   className?: string;
   maxHeight?: number;
 }) {
-  const lines = code.replace(/\s+$/, "").split("\n");
+  const lines = dedent(code);
   return (
     <div className="min-w-0">
       {label && <div className="eyebrow mb-1.5">{label}</div>}

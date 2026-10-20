@@ -183,7 +183,7 @@ export default function LoginPage() {
               </button>
 
               <div
-                className="code mt-[22px] !rounded-[14px] !px-3.5 !py-3 !text-xs"
+                className="code mt-[22px] !rounded-[14px] !px-3.5 !py-3 !text-xs !whitespace-pre-wrap break-words"
                 aria-label="Example output"
               >
                 <span className="c"># example</span>
