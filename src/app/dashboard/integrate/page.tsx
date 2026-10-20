@@ -395,11 +395,11 @@ export default function IntegratePage() {
                       {projectStatusBadge(project.status).label}
                     </span>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
                       {showDescriptionFor !== project.id && (
                         <>
                           {blocked && (
-                            <span id={reasonId} className="text-[11px] text-amber">
+                            <span id={reasonId} className="min-w-0 text-[11px] text-amber">
                               {blocked}
                             </span>
                           )}
