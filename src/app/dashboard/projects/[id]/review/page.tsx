@@ -2,17 +2,33 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { TriangleAlert } from "lucide-react";
+import { ProjectHeader, type ProjectSummary } from "@/components/ProjectHeader";
+import { CodeBlock } from "@/components/CodeBlock";
+import { vendorShort } from "@/lib/vendors";
+import {
+  fetchAllRules,
+  ruleState,
+  RULE_STATE_BADGE,
+  REVIEW_STATUS_BADGE,
+} from "@/lib/ui/rules";
 
 interface NormalizedRuleWithTranslation {
   id: string;
   name: string;
   position: number;
   action: string;
+  enabled?: boolean;
+  logging?: boolean;
+  description?: string | null;
   sources: string[];
   destinations: string[];
   services: string[];
-  sourceZone?: string;
-  destinationZone?: string;
+  sourceZone?: string | null;
+  destinationZone?: string | null;
+  isOverlyPermissive?: boolean;
+  riskScore?: number | null;
+  analysisNotes?: string | null;
   translatedRule?: {
     id: string;
     targetConfig: string;
@@ -23,24 +39,63 @@ interface NormalizedRuleWithTranslation {
   };
 }
 
+type Rule = NormalizedRuleWithTranslation & {
+  translatedRule: NonNullable<NormalizedRuleWithTranslation["translatedRule"]>;
+};
+
+const list = (v: string[]) => (v.length ? v.join(" ") : "any");
+
+/** The parsed source rule, laid out like config. */
+function sourceText(rule: Rule, vendor: string) {
+  const lines = [
+    `# parsed from ${vendor}`,
+    `rule "${rule.name}"`,
+    `  from ${rule.sourceZone ?? "any"} to ${rule.destinationZone ?? "any"}`,
+    `  source ${list(rule.sources)}`,
+    `  destination ${list(rule.destinations)}`,
+    `  service ${list(rule.services)}`,
+    `  action ${rule.action}`,
+  ];
+  if (rule.logging) lines.push("  log");
+  if (rule.enabled === false) lines.push("  disabled");
+  return lines.join("\n");
+}
+
+function pad(n: number) {
+  return `#${String(n).padStart(3, "0")}`;
+}
+
 export default function ReviewPage() {
   const params = useParams();
   const router = useRouter();
+  const projectId = params.id as string;
+  const [project, setProject] = useState<ProjectSummary | null>(null);
   const [rules, setRules] = useState<NormalizedRuleWithTranslation[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
-    fetch(`/api/v1/projects/${params.id}/rules`)
-      .then((r) => r.json())
-      .then((data) => {
-        setRules(data.rules || []);
+    fetchAllRules<NormalizedRuleWithTranslation>(projectId)
+      .then((all) => {
+        setRules(all);
+        const wanted = new URLSearchParams(window.location.search).get("rule");
+        const withT = all.filter((r) => r.translatedRule);
+        const first =
+          withT.find((r) => r.id === wanted) ??
+          withT.find((r) => r.translatedRule!.reviewStatus === "PENDING") ??
+          withT[0];
+        setSelectedId(first?.id ?? null);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
-  }, [params.id]);
+      .catch(() => {
+        setLoadError("Could not load the rules.");
+        setLoading(false);
+      });
+  }, [projectId]);
 
   async function reviewRule(normalizedRuleId: string, status: string) {
-    await fetch(`/api/v1/projects/${params.id}/rules/${normalizedRuleId}`, {
+    await fetch(`/api/v1/projects/${projectId}/rules/${normalizedRuleId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reviewStatus: status }),
@@ -55,110 +110,211 @@ export default function ReviewPage() {
           : r,
       ),
     );
+    // Move on to the next rule that still waits for a decision.
+    const idx = withTranslation.findIndex((r) => r.id === normalizedRuleId);
+    const nextPending = [...withTranslation.slice(idx + 1), ...withTranslation.slice(0, idx)].find(
+      (r) => r.translatedRule.reviewStatus === "PENDING",
+    );
+    if (nextPending) setSelectedId(nextPending.id);
   }
 
-  const withTranslation = rules.filter((r) => r.translatedRule);
+  const withTranslation = rules.filter((r): r is Rule => !!r.translatedRule);
   const reviewed = withTranslation.filter(
-    (r) => r.translatedRule!.reviewStatus !== "PENDING",
+    (r) => r.translatedRule.reviewStatus !== "PENDING",
   ).length;
   const total = withTranslation.length;
+  const selected = withTranslation.find((r) => r.id === selectedId) ?? null;
+  const src = project ? vendorShort(project.sourceVendor) : "source";
+  const tgt = project ? vendorShort(project.targetVendor) : "target";
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Review Translations</h1>
-          <p className="text-gray-400 mt-1">
-            {reviewed} of {total} rules reviewed
-          </p>
-        </div>
-        <button
-          onClick={() => router.push(`/dashboard/projects/${params.id}/export`)}
-          className="btn-brand"
-          disabled={reviewed < total}
-        >
-          Export
-        </button>
-      </div>
+      <ProjectHeader
+        projectId={projectId}
+        step="review"
+        title="Review rules"
+        onLoad={setProject}
+        subtitle={total > 0 ? `${reviewed} of ${total} rules reviewed` : undefined}
+        actions={
+          <button
+            onClick={() => router.push(`/dashboard/projects/${projectId}/export`)}
+            className="btn btn-primary btn-sm"
+            disabled={reviewed < total}
+            title={reviewed < total ? "Review every rule before export" : undefined}
+          >
+            Export
+          </button>
+        }
+      />
 
-      {/* Progress bar */}
-      <div className="w-full bg-white/10 rounded-full h-2 mb-6">
+      {total > 0 && (
         <div
-          className="bg-orange-500 h-2 rounded-full transition-all"
-          style={{ width: `${total > 0 ? (reviewed / total) * 100 : 0}%` }}
-        />
-      </div>
+          className="mb-4 h-1.5 w-full overflow-hidden rounded-full bg-track"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={total}
+          aria-valuenow={reviewed}
+          aria-label="Rules reviewed"
+        >
+          <div
+            className="h-full rounded-full bg-teal transition-all"
+            style={{ width: `${(reviewed / total) * 100}%` }}
+          />
+        </div>
+      )}
 
       {loading ? (
-        <p className="text-gray-400">Loading...</p>
+        <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]" aria-busy="true">
+          <div className="skeleton h-80" />
+          <div className="skeleton h-80" />
+        </div>
+      ) : loadError ? (
+        <div className="alert alert-error" role="alert">
+          {loadError}
+        </div>
+      ) : total === 0 ? (
+        <div className="card p-8 text-center text-[13px] text-ink-65">
+          No translated rules yet. Translate the project first.
+        </div>
       ) : (
-        <div className="space-y-4">
-          {withTranslation.map((rule) => (
-            <div
-              key={rule.id}
-              className={`card-luxury p-5 ${rule.translatedRule!.reviewStatus === "APPROVED" ? "border-green-500/30" : rule.translatedRule!.reviewStatus === "FLAGGED" ? "border-red-500/30" : ""}`}
-            >
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <h3 className="font-medium text-white">
-                    #{rule.position} {rule.name}
-                  </h3>
-                  <p className="text-xs text-gray-400">
-                    {rule.action} | {rule.sources.join(", ")} &rarr;{" "}
-                    {rule.destinations.join(", ")} | {rule.services.join(", ")}
-                  </p>
-                </div>
-                <span className="text-xs text-gray-500">
-                  {Math.round(rule.translatedRule!.confidence * 100)}%
-                  confidence
-                </span>
-              </div>
-
-              <pre className="bg-black/30 p-3 rounded text-green-400 text-xs font-mono overflow-x-auto mb-3">
-                {rule.translatedRule!.targetConfig}
-              </pre>
-
-              <p className="text-sm text-gray-300 mb-3">
-                {rule.translatedRule!.explanation}
-              </p>
-
-              {(rule.translatedRule!.warnings ?? []).length > 0 && (
-                <ul className="text-xs mb-3 space-y-1">
-                  {(rule.translatedRule!.warnings ?? []).map((w, i) => (
-                    <li
-                      key={i}
-                      className={w.startsWith("REVIEW:") ? "text-red-400" : "text-yellow-400/80"}
-                    >
-                      {w}
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              <div className="flex gap-2">
-                <button
-                  onClick={() => reviewRule(rule.id, "APPROVED")}
-                  className={`px-3 py-1 text-sm rounded ${rule.translatedRule!.reviewStatus === "APPROVED" ? "bg-green-500 text-white" : "bg-green-500/10 text-green-400 hover:bg-green-500/20"}`}
-                >
-                  Approve
-                </button>
-                <button
-                  onClick={() => reviewRule(rule.id, "SKIPPED")}
-                  className={`px-3 py-1 text-sm rounded ${rule.translatedRule!.reviewStatus === "SKIPPED" ? "bg-gray-500 text-white" : "bg-white/5 text-gray-400 hover:bg-white/10"}`}
-                >
-                  Skip
-                </button>
-                <button
-                  onClick={() => reviewRule(rule.id, "FLAGGED")}
-                  className={`px-3 py-1 text-sm rounded ${rule.translatedRule!.reviewStatus === "FLAGGED" ? "bg-red-500 text-white" : "bg-red-500/10 text-red-400 hover:bg-red-500/20"}`}
-                >
-                  Flag
-                </button>
-              </div>
+        <div className="grid items-start gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <div className="glass !rounded-[18px] overflow-hidden">
+            <div className="flex justify-between border-b border-line px-4 py-3">
+              <b>{total} rules</b>
+              <span className="text-ink-65">{total - reviewed} open</span>
             </div>
-          ))}
+            <ul className="max-h-[40vh] overflow-y-auto lg:max-h-[calc(100vh-280px)]" aria-label="Rules">
+              {withTranslation.map((rule) => {
+                const t = rule.translatedRule;
+                const decided = t.reviewStatus !== "PENDING";
+                const state = ruleState({
+                  isOverlyPermissive: rule.isOverlyPermissive,
+                  riskScore: rule.riskScore,
+                  warnings: t.warnings,
+                });
+                const badge = decided
+                  ? REVIEW_STATUS_BADGE[t.reviewStatus] ?? REVIEW_STATUS_BADGE.PENDING
+                  : { cls: RULE_STATE_BADGE[state], label: state };
+                const on = rule.id === selectedId;
+                return (
+                  <li key={rule.id} className="border-b border-line-2 last:border-b-0">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(rule.id)}
+                      aria-current={on ? "true" : undefined}
+                      className={`flex w-full items-center justify-between gap-2.5 px-4 py-3 text-left hover:bg-g-bg2 ${on ? "!bg-accent-soft" : ""}`}
+                    >
+                      <span className="truncate font-mono text-[13px]">
+                        {pad(rule.position)} {rule.name}
+                      </span>
+                      <span className={`badge shrink-0 ${badge.cls}`}>{badge.label.toLowerCase()}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          {selected && <RuleDetail rule={selected} src={src} tgt={tgt} onReview={reviewRule} />}
         </div>
       )}
     </div>
+  );
+}
+
+function RuleDetail({
+  rule,
+  src,
+  tgt,
+  onReview,
+}: {
+  rule: Rule;
+  src: string;
+  tgt: string;
+  onReview: (id: string, status: string) => void;
+}) {
+  const t = rule.translatedRule;
+  const warnings = t.warnings ?? [];
+  const review = warnings.filter((w) => w.startsWith("REVIEW:"));
+  const notes = warnings.filter((w) => !w.startsWith("REVIEW:"));
+  const state = ruleState({
+    isOverlyPermissive: rule.isOverlyPermissive,
+    riskScore: rule.riskScore,
+    warnings,
+  });
+  const status = REVIEW_STATUS_BADGE[t.reviewStatus] ?? REVIEW_STATUS_BADGE.PENDING;
+  const stateLabel = { risk: "Risky rule", flag: "Needs review", ok: "Clean" }[state];
+
+  return (
+    <section className="card grid min-w-0 gap-4 p-5" aria-label={`Rule ${rule.name}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="break-all font-mono !text-[15px]">
+            {pad(rule.position)} {rule.name}
+          </h2>
+          <div className="text-[13px] text-ink-65">
+            {rule.sourceZone ?? "any"} → {rule.destinationZone ?? "any"} · {rule.action} ·{" "}
+            {Math.round(t.confidence * 100)}% confidence
+          </div>
+        </div>
+        <div className="flex gap-2">
+          {t.reviewStatus !== "PENDING" && <span className={`badge ${status.cls}`}>{status.label}</span>}
+          <span className={`badge ${RULE_STATE_BADGE[state]}`}>{stateLabel}</span>
+        </div>
+      </div>
+
+      {state === "risk" && rule.analysisNotes && (
+        <div className="alert alert-error">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <span>{rule.analysisNotes}</span>
+        </div>
+      )}
+
+      {review.map((w, i) => (
+        <div key={i} className="alert alert-warn border border-amber/20">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <span>{w.replace(/^REVIEW:\s*/, "")}</span>
+        </div>
+      ))}
+
+      <div className="grid gap-3 xl:grid-cols-2">
+        <CodeBlock label={`Source · ${src}`} code={sourceText(rule, src)} />
+        <CodeBlock label={`Target · ${tgt}`} code={t.targetConfig} />
+      </div>
+
+      {t.explanation && <p className="text-[13px] text-ink-65">{t.explanation}</p>}
+
+      {notes.length > 0 && (
+        <ul className="grid gap-1 text-xs text-ink-65">
+          {notes.map((w, i) => (
+            <li key={i}>· {w}</li>
+          ))}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap justify-end gap-2">
+        <button
+          onClick={() => onReview(rule.id, "SKIPPED")}
+          className="btn btn-ghost btn-sm"
+          aria-pressed={t.reviewStatus === "SKIPPED"}
+        >
+          Skip
+        </button>
+        <button
+          onClick={() => onReview(rule.id, "FLAGGED")}
+          className="btn btn-danger btn-sm"
+          aria-pressed={t.reviewStatus === "FLAGGED"}
+        >
+          Flag
+        </button>
+        <button
+          onClick={() => onReview(rule.id, "APPROVED")}
+          className="btn btn-primary btn-sm"
+          aria-pressed={t.reviewStatus === "APPROVED"}
+        >
+          Approve
+        </button>
+      </div>
+    </section>
   );
 }

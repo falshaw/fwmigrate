@@ -8,15 +8,14 @@ import {
   Download,
   CheckCircle2,
   XCircle,
-  Clock,
   Loader2,
   Plus,
-  ArrowLeft,
   Trash2,
   FileUp,
   Files,
 } from "lucide-react";
 import { VENDOR_LIST } from "@/lib/vendors";
+import { PageHeader } from "@/components/ProjectHeader";
 
 interface BatchConfig {
   filename: string;
@@ -241,45 +240,37 @@ export default function BatchMigrationPage() {
 
   if (loading) {
     return (
-      <div className="text-gray-400 py-20 text-center">Loading batches...</div>
+      <div className="py-20 text-center text-ink-65">Loading batches...</div>
     );
   }
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <Link
-              href="/dashboard"
-              className="text-gray-400 hover:text-white transition"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </Link>
-            <h1 className="text-2xl font-bold text-white">Batch Migration</h1>
-          </div>
-          <p className="text-sm text-gray-400">
-            Import multiple configs, batch translate, download all results
-          </p>
-        </div>
-        <button
-          onClick={() => setShowCreate(!showCreate)}
-          className="btn-primary flex items-center gap-2 text-sm"
-        >
-          <Plus className="w-4 h-4" /> New Batch
-        </button>
-      </div>
+      <PageHeader
+        eyebrow="Projects"
+        title="Batch migration"
+        subtitle="Import several configs, translate them in one run, download all results."
+        actions={
+          <button
+            onClick={() => setShowCreate(!showCreate)}
+            className="btn btn-primary btn-sm"
+            aria-expanded={showCreate}
+          >
+            <Plus className="w-4 h-4" aria-hidden /> New batch
+          </button>
+        }
+      />
 
       {/* Create Form */}
       {showCreate && (
-        <div className="card-luxury p-6 mb-6">
-          <h2 className="text-lg font-semibold text-white mb-4">
+        <div className="card p-5 mb-4">
+          <h2 className="!text-base mb-4">
             Create Batch Migration
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="text-sm text-gray-400 mb-1 block">
+              <label className="mb-1.5 block text-[13px] font-semibold">
                 Batch Name
               </label>
               <input
@@ -287,23 +278,23 @@ export default function BatchMigrationPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Q1 2026 Data Center Migration"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:border-orange-500/50 focus:outline-none"
+                className="input"
               />
             </div>
             <div>
-              <label className="text-sm text-gray-400 mb-1 block">
+              <label className="mb-1.5 block text-[13px] font-semibold">
                 Default Target Vendor
               </label>
               <select
                 value={defaultTarget}
                 onChange={(e) => setDefaultTarget(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
+                className="input"
               >
                 {vendorOptions.map((v) => (
                   <option
                     key={v.value}
                     value={v.value}
-                    className="bg-[#0d1e36]"
+                   
                   >
                     {v.label}
                   </option>
@@ -320,8 +311,8 @@ export default function BatchMigrationPage() {
             onDrop={handleDrop}
             className={`border-2 border-dashed rounded-xl p-8 mb-4 text-center transition-all cursor-pointer ${
               isDragOver
-                ? "border-orange-500 bg-orange-500/10"
-                : "border-white/10 bg-white/[0.02] hover:border-white/20"
+                ? "border-accent bg-accent-soft"
+                : "border-line bg-g-bg hover:border-accent/50"
             }`}
             onClick={() => {
               const input = document.createElement("input");
@@ -336,16 +327,16 @@ export default function BatchMigrationPage() {
             }}
           >
             <FileUp
-              className={`w-10 h-10 mx-auto mb-3 ${isDragOver ? "text-orange-400" : "text-gray-600"}`}
+              className={`w-10 h-10 mx-auto mb-3 ${isDragOver ? "text-accent" : "text-ink-45"}`}
             />
             <p
-              className={`text-sm ${isDragOver ? "text-orange-400" : "text-gray-400"}`}
+              className={`text-[13px] ${isDragOver ? "text-accent" : "text-ink-65"}`}
             >
               {isDragOver
                 ? "Drop files here..."
                 : "Drag & drop firewall config files here, or click to browse"}
             </p>
-            <p className="text-[10px] text-gray-600 mt-1">
+            <p className="text-[11px] text-ink-45 mt-1">
               Supports .txt, .conf, .cfg, .xml, .json — source vendor
               auto-detected
             </p>
@@ -355,7 +346,7 @@ export default function BatchMigrationPage() {
           {configs.length > 0 && (
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-gray-400 flex items-center gap-1.5">
+                <span className="text-xs text-ink-65 flex items-center gap-1.5">
                   <Files className="w-3.5 h-3.5" />
                   {configs.length} config{configs.length !== 1 ? "s" : ""}{" "}
                   loaded
@@ -365,20 +356,20 @@ export default function BatchMigrationPage() {
                 {configs.map((config, idx) => (
                   <div
                     key={idx}
-                    className="bg-white/[0.03] border border-white/10 rounded-lg p-3"
+                    className="rounded-xl border border-g-line bg-g-bg p-3"
                   >
                     <div className="flex items-center gap-3 mb-2">
-                      <span className="text-sm font-medium text-white truncate flex-1">
+                      <span className="font-mono text-[13px] font-medium truncate flex-1">
                         {config.filename || `Config #${idx + 1}`}
                       </span>
                       {config.rawConfig && (
-                        <span className="text-[10px] text-green-400 shrink-0">
+                        <span className="font-mono text-[11px] text-teal shrink-0">
                           {config.rawConfig.split("\n").length} lines
                         </span>
                       )}
                       <button
                         onClick={() => removeConfig(idx)}
-                        className="text-red-400 hover:text-red-300 transition shrink-0"
+                        className="text-red hover:opacity-75 shrink-0"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -386,7 +377,7 @@ export default function BatchMigrationPage() {
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-[10px] text-gray-600 mb-0.5 block">
+                        <label className="mb-1 block text-[11px] text-ink-65">
                           Source
                         </label>
                         <select
@@ -394,13 +385,13 @@ export default function BatchMigrationPage() {
                           onChange={(e) =>
                             updateConfig(idx, "sourceVendor", e.target.value)
                           }
-                          className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-white text-xs"
+                          className="input !h-9 text-[13px]"
                         >
                           {vendorOptions.map((v) => (
                             <option
                               key={v.value}
                               value={v.value}
-                              className="bg-[#0d1e36]"
+                             
                             >
                               {v.label}
                             </option>
@@ -408,7 +399,7 @@ export default function BatchMigrationPage() {
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] text-gray-600 mb-0.5 block">
+                        <label className="mb-1 block text-[11px] text-ink-65">
                           Target
                         </label>
                         <select
@@ -416,13 +407,13 @@ export default function BatchMigrationPage() {
                           onChange={(e) =>
                             updateConfig(idx, "targetVendor", e.target.value)
                           }
-                          className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-white text-xs"
+                          className="input !h-9 text-[13px]"
                         >
                           {vendorOptions.map((v) => (
                             <option
                               key={v.value}
                               value={v.value}
-                              className="bg-[#0d1e36]"
+                             
                             >
                               {v.label}
                             </option>
@@ -439,7 +430,7 @@ export default function BatchMigrationPage() {
                             const file = e.target.files?.[0];
                             if (file) handleFileUpload(idx, file);
                           }}
-                          className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-white text-xs file:mr-3 file:py-0.5 file:px-2 file:rounded file:border-0 file:text-xs file:bg-orange-500/20 file:text-orange-400"
+                          className="input text-xs"
                         />
                       </div>
                     )}
@@ -463,7 +454,7 @@ export default function BatchMigrationPage() {
                   },
                 ])
               }
-              className="flex items-center gap-2 text-sm text-orange-400 hover:text-orange-300 transition"
+              className="btn btn-ghost btn-sm"
             >
               <Upload className="w-4 h-4" /> Add Config Manually
             </button>
@@ -474,14 +465,14 @@ export default function BatchMigrationPage() {
                 setName("");
                 setConfigs([]);
               }}
-              className="px-4 py-2 text-sm text-gray-400 hover:text-white transition"
+              className="btn btn-ghost btn-sm"
             >
               Cancel
             </button>
             <button
               onClick={handleCreate}
               disabled={creating || !name || configs.length === 0}
-              className="btn-primary text-sm flex items-center gap-2 disabled:opacity-50"
+              className="btn btn-primary btn-sm"
             >
               {creating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -497,62 +488,62 @@ export default function BatchMigrationPage() {
 
       {/* Results Panel */}
       {results && (
-        <div className="card-luxury p-6 mb-6">
-          <h3 className="text-lg font-semibold text-white mb-3">
+        <div className="card p-5 mb-4">
+          <h3 className="!text-base mb-3">
             Batch Results
           </h3>
           <div className="grid grid-cols-3 gap-4 mb-4">
-            <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3 text-center">
-              <div className="text-xl font-bold text-green-400">
+            <div className="rounded-xl border border-g-line bg-g-bg p-3 text-center">
+              <div className="text-xl font-bold text-teal">
                 {results.filter((r) => r.status === "success").length}
               </div>
-              <div className="text-xs text-gray-400">Succeeded</div>
+              <div className="text-xs text-ink-65">Succeeded</div>
             </div>
-            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-center">
-              <div className="text-xl font-bold text-red-400">
+            <div className="rounded-xl border border-g-line bg-g-bg p-3 text-center">
+              <div className="text-xl font-bold text-red">
                 {results.filter((r) => r.status === "failed").length}
               </div>
-              <div className="text-xs text-gray-400">Failed</div>
+              <div className="text-xs text-ink-65">Failed</div>
             </div>
-            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-center">
-              <div className="text-xl font-bold text-blue-400">
+            <div className="rounded-xl border border-g-line bg-g-bg p-3 text-center">
+              <div className="text-xl font-bold text-accent">
                 {results.reduce((s, r) => s + (r.ruleCount || 0), 0)}
               </div>
-              <div className="text-xs text-gray-400">Total Rules</div>
+              <div className="text-xs text-ink-65">Total Rules</div>
             </div>
           </div>
           <div className="space-y-2">
             {results.map((r, idx) => (
               <div
                 key={idx}
-                className="flex items-center gap-3 px-3 py-2 bg-white/[0.03] rounded-lg"
+                className="flex items-center gap-3 rounded-xl border border-g-line bg-g-bg px-3 py-2"
               >
                 {r.status === "success" ? (
-                  <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+                  <CheckCircle2 className="w-4 h-4 text-teal shrink-0" />
                 ) : (
-                  <XCircle className="w-4 h-4 text-red-400 shrink-0" />
+                  <XCircle className="w-4 h-4 text-red shrink-0" />
                 )}
-                <span className="text-sm text-white flex-1 truncate">
+                <span className="font-mono text-[13px] flex-1 truncate">
                   {r.filename}
                 </span>
-                <span className="text-xs text-gray-400 shrink-0">
+                <span className="font-mono text-xs text-ink-65 shrink-0">
                   {vendorLabels[r.sourceVendor] || r.sourceVendor} →{" "}
                   {vendorLabels[r.targetVendor] || r.targetVendor}
                 </span>
                 {r.ruleCount !== undefined && (
-                  <span className="text-xs text-green-400 shrink-0">
+                  <span className="text-xs text-teal shrink-0">
                     {r.ruleCount} rules
                   </span>
                 )}
                 {r.error && (
-                  <span className="text-xs text-red-400 truncate max-w-[200px] shrink-0">
+                  <span className="text-xs text-red truncate max-w-[200px] shrink-0">
                     {r.error}
                   </span>
                 )}
                 {r.projectId && (
                   <Link
                     href={`/dashboard/projects/${r.projectId}`}
-                    className="text-xs text-orange-400 hover:underline shrink-0"
+                    className="text-xs font-semibold text-accent hover:underline shrink-0"
                   >
                     View
                   </Link>
@@ -565,37 +556,37 @@ export default function BatchMigrationPage() {
 
       {/* Batch List */}
       {batches.length === 0 ? (
-        <div className="card-luxury p-12 text-center">
-          <Upload className="w-10 h-10 text-gray-600 mx-auto mb-3" />
-          <p className="text-gray-400 text-sm">No batch migrations yet</p>
-          <p className="text-gray-600 text-xs mt-1">
+        <div className="card p-12 text-center">
+          <Upload className="w-10 h-10 text-ink-45 mx-auto mb-3" />
+          <p className="text-ink-65 text-[13px]">No batch migrations yet</p>
+          <p className="text-ink-45 text-xs mt-1">
             Create a batch to migrate multiple configs at once
           </p>
         </div>
       ) : (
         <div className="space-y-3">
           {batches.map((batch) => (
-            <div key={batch.id} className="card-luxury p-4">
+            <div key={batch.id} className="card p-4">
               <div className="flex items-center gap-4">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white truncate">
+                  <p className="font-semibold truncate">
                     {batch.name}
                   </p>
                   <div className="flex items-center gap-3 mt-1">
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-ink-65">
                       {batch.totalConfigs} configs
                     </span>
                     {batch.completedCount > 0 && (
-                      <span className="text-xs text-green-400">
+                      <span className="text-xs text-teal">
                         {batch.completedCount} done
                       </span>
                     )}
                     {batch.failedCount > 0 && (
-                      <span className="text-xs text-red-400">
+                      <span className="text-xs text-red">
                         {batch.failedCount} failed
                       </span>
                     )}
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-ink-45">
                       {new Date(batch.createdAt).toLocaleDateString()}
                     </span>
                   </div>
@@ -608,7 +599,7 @@ export default function BatchMigrationPage() {
                     <button
                       onClick={() => handleRun(batch.id)}
                       disabled={running === batch.id}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/20 text-green-400 text-xs font-medium hover:bg-green-500/30 transition disabled:opacity-50"
+                      className="btn btn-primary btn-sm"
                     >
                       {running === batch.id ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -621,7 +612,7 @@ export default function BatchMigrationPage() {
                   {batch.status === "completed" && (
                     <button
                       onClick={() => handleExport(batch.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500/20 text-orange-400 text-xs font-medium hover:bg-orange-500/30 transition"
+                      className="btn btn-ghost btn-sm"
                     >
                       <Download className="w-3.5 h-3.5" /> Export
                     </button>
@@ -632,13 +623,13 @@ export default function BatchMigrationPage() {
               {/* Progress bar for running batch */}
               {running === batch.id && runProgress > 0 && (
                 <div className="mt-3">
-                  <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+                  <div className="flex justify-between text-[11px] text-ink-45 mb-1">
                     <span>Processing configs...</span>
                     <span>{runProgress}%</span>
                   </div>
-                  <div className="w-full bg-white/5 rounded-full h-1.5">
+                  <div className="w-full bg-track rounded-full h-1.5 overflow-hidden">
                     <div
-                      className="bg-gradient-to-r from-green-500 to-green-400 h-1.5 rounded-full transition-all duration-300"
+                      className="bg-teal h-1.5 rounded-full transition-all duration-300"
                       style={{ width: `${runProgress}%` }}
                     />
                   </div>
@@ -648,17 +639,17 @@ export default function BatchMigrationPage() {
               {/* Completed progress bar */}
               {batch.status === "completed" && batch.totalConfigs > 0 && (
                 <div className="mt-3">
-                  <div className="w-full bg-white/5 rounded-full h-1">
+                  <div className="w-full bg-track rounded-full h-1 overflow-hidden">
                     <div className="flex h-1 rounded-full overflow-hidden">
                       <div
-                        className="bg-green-500"
+                        className="bg-teal"
                         style={{
                           width: `${(batch.completedCount / batch.totalConfigs) * 100}%`,
                         }}
                       />
                       {batch.failedCount > 0 && (
                         <div
-                          className="bg-red-500"
+                          className="bg-red"
                           style={{
                             width: `${(batch.failedCount / batch.totalConfigs) * 100}%`,
                           }}
@@ -677,32 +668,19 @@ export default function BatchMigrationPage() {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const config: Record<string, { bg: string; text: string; label: string }> = {
-    pending: {
-      bg: "bg-gray-500/10",
-      text: "text-gray-400",
-      label: "Pending",
-    },
-    running: {
-      bg: "bg-blue-500/10",
-      text: "text-blue-400",
-      label: "Running",
-    },
-    completed: {
-      bg: "bg-green-500/10",
-      text: "text-green-400",
-      label: "Completed",
-    },
-    failed: { bg: "bg-red-500/10", text: "text-red-400", label: "Failed" },
+  const config: Record<string, { cls: string; label: string }> = {
+    pending: { cls: "b-grey", label: "Pending" },
+    running: { cls: "b-blue", label: "Running" },
+    completed: { cls: "b-teal", label: "Completed" },
+    failed: { cls: "b-red", label: "Failed" },
   };
 
   const s = config[status] || config.pending;
 
   return (
     <span
-      className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${s.bg} ${s.text}`}
+      className={`badge ${s.cls}`}
     >
-      {status === "running" && <Clock className="w-3 h-3 inline mr-1" />}
       {s.label}
     </span>
   );

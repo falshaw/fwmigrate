@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { ProjectHeader } from "@/components/ProjectHeader";
 
 export default function ImportPage() {
   const params = useParams();
   const router = useRouter();
+  const projectId = params.id as string;
   const [config, setConfig] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -19,7 +21,7 @@ export default function ImportPage() {
     setError("");
 
     // Import
-    let res = await fetch(`/api/v1/projects/${params.id}/import`, {
+    let res = await fetch(`/api/v1/projects/${projectId}/import`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rawConfig: config }),
@@ -32,7 +34,7 @@ export default function ImportPage() {
     }
 
     // Parse
-    res = await fetch(`/api/v1/projects/${params.id}/parse`, {
+    res = await fetch(`/api/v1/projects/${projectId}/parse`, {
       method: "POST",
     });
     if (!res.ok) {
@@ -41,45 +43,44 @@ export default function ImportPage() {
       return;
     }
 
-    router.push(`/dashboard/projects/${params.id}/analysis`);
+    router.push(`/dashboard/projects/${projectId}/analysis`);
   }
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-white mb-6">
-        Import Source Config
-      </h1>
+      <ProjectHeader projectId={projectId} step="import" title="Import source config" />
 
-      <div className="card-luxury p-6">
+      <div className="card grid gap-4 p-5">
+        <p className="text-[13px] text-ink-65">
+          Paste the source firewall configuration. Supports show running-config, XML exports,
+          set commands and JSON exports.
+        </p>
+
         {error && (
-          <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm p-3 rounded-lg mb-4">
+          <div className="alert alert-error" role="alert">
             {error}
           </div>
         )}
 
-        <p className="text-gray-400 mb-4">
-          Paste your source firewall configuration below. Supports show
-          running-config, XML exports, set commands, and JSON exports.
-        </p>
-
+        <label htmlFor="config" className="sr-only">
+          Source configuration
+        </label>
         <textarea
+          id="config"
           value={config}
           onChange={(e) => setConfig(e.target.value)}
           rows={20}
-          placeholder="Paste your firewall config here..."
-          className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg text-green-400 font-mono text-sm focus:border-orange-500 focus:outline-none mb-4"
+          spellCheck={false}
+          placeholder="# paste your firewall config here"
+          className="code"
         />
 
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-gray-500">
-            {config.split("\n").length} lines
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="font-mono text-xs text-ink-45">
+            {config ? config.split("\n").length : 0} lines
           </span>
-          <button
-            onClick={handleImportAndParse}
-            disabled={loading}
-            className="btn-brand disabled:opacity-50"
-          >
-            {loading ? "Importing & Parsing..." : "Import & Parse"}
+          <button onClick={handleImportAndParse} disabled={loading} className="btn btn-primary">
+            {loading ? "Importing and parsing…" : "Import and parse"}
           </button>
         </div>
       </div>

@@ -1,46 +1,30 @@
-import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
+import { AppBackground } from "@/components/AppBackground";
+import { Sidebar } from "@/components/Sidebar";
 
-const navItems = [
-  { href: "/dashboard", label: "Projects" },
-  { href: "/dashboard/batch", label: "Batch Migration" },
-  { href: "/dashboard/validate", label: "Validation" },
-  { href: "/dashboard/integrate", label: "Change Manager" },
-];
+export const dynamic = "force-dynamic";
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
   return (
-    <div className="min-h-screen bg-[#0a1628]">
-      <header className="border-b border-white/10 bg-[#0d1e36]">
-        <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <Link
-              href="/dashboard"
-              className="text-xl font-bold text-orange-500"
-            >
-              FW Migrate
-            </Link>
-            <nav className="flex gap-4">
-              {navItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="text-sm text-gray-400 hover:text-white transition"
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-          </div>
-          <Link href="/dashboard/projects/new" className="btn-brand text-sm">
-            New Migration
-          </Link>
-        </div>
-      </header>
-      <main className="max-w-7xl mx-auto px-6 py-8">{children}</main>
-    </div>
+    <>
+      <AppBackground />
+      <div className="mx-auto flex max-w-[1340px] flex-col gap-3 p-4 lg:flex-row lg:items-start lg:gap-[18px] lg:px-6 lg:py-7">
+        <Sidebar
+          name={session.user.name ?? ""}
+          email={session.user.email ?? ""}
+        />
+        <main className="glass min-w-0 flex-1 p-[18px] sm:px-7 sm:pt-[26px] sm:pb-7">
+          {children}
+        </main>
+      </div>
+    </>
   );
 }

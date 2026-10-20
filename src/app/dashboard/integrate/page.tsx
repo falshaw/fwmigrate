@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
-  Link2,
   Settings,
   Wifi,
   WifiOff,
@@ -17,6 +16,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { VENDOR_LIST } from "@/lib/vendors";
+import { PageHeader } from "@/components/ProjectHeader";
 
 interface ConnectionStatus {
   configured: boolean;
@@ -134,7 +134,7 @@ export default function IntegratePage() {
 
   if (loading) {
     return (
-      <div className="text-gray-400 py-20 text-center">
+      <div className="py-20 text-center text-ink-65">
         Loading integration status...
       </div>
     );
@@ -145,24 +145,18 @@ export default function IntegratePage() {
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-6">
-        <Link2 className="w-6 h-6 text-blue-400" />
-        <div>
-          <h1 className="text-2xl font-bold text-white">
-            Change Manager Integration
-          </h1>
-          <p className="text-sm text-gray-400">
-            Push migrated rules to Change Manager for change approval workflow
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Tools"
+        title="Change manager"
+        subtitle="Push migrated rules to Change Manager for the change approval workflow."
+      />
 
       {/* Connection Status */}
-      <div className="card-luxury p-6 mb-6">
+      <div className="card p-5 mb-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <Settings className="w-5 h-5 text-blue-400" />
-            <h2 className="text-lg font-semibold text-white">
+            <Settings className="w-5 h-5 text-accent" />
+            <h2 className="!text-base">
               Connection Status
             </h2>
           </div>
@@ -172,7 +166,7 @@ export default function IntegratePage() {
                 href={changeManagerUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-500/20 text-green-400 text-xs font-medium hover:bg-green-500/30 transition"
+                className="btn btn-ghost btn-sm"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 Open Change Manager
@@ -181,7 +175,7 @@ export default function IntegratePage() {
             <button
               onClick={handleTestConnection}
               disabled={testing}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-500/20 text-blue-400 text-xs font-medium hover:bg-blue-500/30 transition disabled:opacity-40"
+              className="btn btn-ghost btn-sm"
             >
               {testing ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -194,43 +188,43 @@ export default function IntegratePage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white/[0.03] border border-white/10 rounded-lg p-4">
-            <p className="text-xs text-gray-500 mb-1">API URL</p>
-            <p className="text-sm text-white font-mono truncate">
+          <div className="rounded-xl border border-g-line bg-g-bg p-4">
+            <p className="eyebrow mb-1">API URL</p>
+            <p className="font-mono text-[13px] truncate">
               {status?.apiUrl || "Not configured"}
             </p>
           </div>
-          <div className="bg-white/[0.03] border border-white/10 rounded-lg p-4">
-            <p className="text-xs text-gray-500 mb-1">API Key</p>
-            <p className="text-sm text-white">
+          <div className="rounded-xl border border-g-line bg-g-bg p-4">
+            <p className="eyebrow mb-1">API Key</p>
+            <p className="text-[13px]">
               {status?.hasApiKey ? "Configured" : "Not set (using open access)"}
             </p>
           </div>
-          <div className="bg-white/[0.03] border border-white/10 rounded-lg p-4">
+          <div className="rounded-xl border border-g-line bg-g-bg p-4">
             <div className="flex items-center gap-2">
               {isConnected ? (
-                <Wifi className="w-4 h-4 text-green-400" />
+                <Wifi className="w-4 h-4 text-teal" />
               ) : (
-                <WifiOff className="w-4 h-4 text-red-400" />
+                <WifiOff className="w-4 h-4 text-red" />
               )}
               <div>
-                <p className="text-xs text-gray-500 mb-0.5">Status</p>
+                <p className="eyebrow mb-0.5">Status</p>
                 <p
-                  className={`text-sm font-medium ${isConnected ? "text-green-400" : "text-red-400"}`}
+                  className={`text-[13px] font-semibold ${isConnected ? "text-teal" : "text-red"}`}
                 >
                   {isConnected ? "Connected" : "Disconnected"}
                 </p>
               </div>
             </div>
             {status?.connection?.latencyMs !== undefined && (
-              <p className="text-[10px] text-gray-500 mt-1">
+              <p className="text-[11px] text-ink-45 mt-1">
                 Latency: {status.connection.latencyMs}ms
                 {status.connection.version &&
                   ` | v${status.connection.version}`}
               </p>
             )}
             {status?.connection?.error && (
-              <p className="text-[10px] text-red-400 mt-1">
+              <p className="text-[11px] text-red mt-1">
                 {status.connection.error}
               </p>
             )}
@@ -238,16 +232,16 @@ export default function IntegratePage() {
         </div>
 
         {!isConnected && (
-          <div className="mt-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
+          <div className="alert alert-warn mt-4">
+            <AlertTriangle className="w-4 h-4 text-amber shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm text-yellow-400">
+              <p className="text-[13px] font-semibold">
                 Change Manager is not reachable
               </p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Set <code className="text-yellow-400/80">CHANGE_MANAGER_API_URL</code>{" "}
+              <p className="text-xs text-ink-65 mt-0.5">
+                Set <code className="font-mono">CHANGE_MANAGER_API_URL</code>{" "}
                 and optionally{" "}
-                <code className="text-yellow-400/80">CHANGE_MANAGER_API_KEY</code> in
+                <code className="font-mono">CHANGE_MANAGER_API_KEY</code> in
                 your .env file. Default: http://localhost:3003
               </p>
             </div>
@@ -257,13 +251,13 @@ export default function IntegratePage() {
 
       {/* Push Results */}
       {pushResult && (
-        <div className="card-luxury p-6 mb-6">
+        <div className="card p-5 mb-4">
           <div className="flex items-center gap-2 mb-3">
-            <Send className="w-5 h-5 text-blue-400" />
-            <h3 className="text-sm font-semibold text-white">
+            <Send className="w-5 h-5 text-accent" />
+            <h3 className="!text-sm font-semibold">
               Push Results: {pushResult.projectName}
             </h3>
-            <span className="ml-auto text-xs text-gray-400">
+            <span className="ml-auto text-xs text-ink-65">
               {pushResult.success}/{pushResult.totalRules} rules pushed
               successfully
             </span>
@@ -271,31 +265,31 @@ export default function IntegratePage() {
 
           {/* Summary */}
           <div className="grid grid-cols-3 gap-3 mb-4">
-            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-2.5 text-center">
-              <div className="text-lg font-bold text-blue-400">
+            <div className="rounded-xl border border-g-line bg-g-bg p-2.5 text-center">
+              <div className="text-lg font-bold text-accent">
                 {pushResult.totalRules}
               </div>
-              <div className="text-[10px] text-gray-400">Total</div>
+              <div className="text-[11px] text-ink-65">Total</div>
             </div>
-            <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-2.5 text-center">
-              <div className="text-lg font-bold text-green-400">
+            <div className="rounded-xl border border-g-line bg-g-bg p-2.5 text-center">
+              <div className="text-lg font-bold text-teal">
                 {pushResult.success}
               </div>
-              <div className="text-[10px] text-gray-400">Pushed</div>
+              <div className="text-[11px] text-ink-65">Pushed</div>
             </div>
-            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5 text-center">
-              <div className="text-lg font-bold text-red-400">
+            <div className="rounded-xl border border-g-line bg-g-bg p-2.5 text-center">
+              <div className="text-lg font-bold text-red">
                 {pushResult.failed}
               </div>
-              <div className="text-[10px] text-gray-400">Failed</div>
+              <div className="text-[11px] text-ink-65">Failed</div>
             </div>
           </div>
 
           {/* Change Manager link */}
           {pushResult.success > 0 && pushResult.changeManagerUrl && (
-            <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3 mb-4 flex items-center gap-2">
-              <Shield className="w-4 h-4 text-green-400" />
-              <p className="text-sm text-green-400 flex-1">
+            <div className="alert alert-ok mb-4 items-center">
+              <Shield className="w-4 h-4 text-teal" />
+              <p className="text-[13px] flex-1">
                 {pushResult.success} rule
                 {pushResult.success !== 1 ? "s" : ""} sent to Change Manager approval
                 queue
@@ -304,7 +298,7 @@ export default function IntegratePage() {
                 href={`${pushResult.changeManagerUrl}/requests`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1 text-xs text-green-400 hover:underline"
+                className="flex items-center gap-1 text-xs font-semibold hover:underline"
               >
                 View in Change Manager <ExternalLink className="w-3 h-3" />
               </a>
@@ -315,23 +309,23 @@ export default function IntegratePage() {
             {pushResult.results.map((r, idx) => (
               <div
                 key={idx}
-                className="flex items-center gap-2 px-3 py-2 bg-white/[0.03] rounded-lg"
+                className="flex items-center gap-2 rounded-xl border border-g-line bg-g-bg px-3 py-2"
               >
                 {r.status === "success" ? (
-                  <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+                  <CheckCircle2 className="w-4 h-4 text-teal shrink-0" />
                 ) : (
-                  <XCircle className="w-4 h-4 text-red-400 shrink-0" />
+                  <XCircle className="w-4 h-4 text-red shrink-0" />
                 )}
-                <span className="text-xs text-white flex-1 truncate">
+                <span className="font-mono text-xs flex-1 truncate">
                   {r.ruleName}
                 </span>
                 {r.changeManagerRuleId && (
-                  <span className="text-[10px] text-gray-400 shrink-0">
+                  <span className="text-[11px] text-ink-65 shrink-0">
                     ID: {r.changeManagerRuleId}
                   </span>
                 )}
                 {r.error && (
-                  <span className="text-[10px] text-red-400 truncate max-w-[250px] shrink-0">
+                  <span className="text-[11px] text-red truncate max-w-[250px] shrink-0">
                     {r.error}
                   </span>
                 )}
@@ -342,20 +336,20 @@ export default function IntegratePage() {
       )}
 
       {/* Eligible Projects */}
-      <div className="card-luxury p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">
+      <div className="card p-5">
+        <h2 className="!text-base mb-4">
           Projects Ready for Push
         </h2>
 
         {projects.length === 0 ? (
           <div className="text-center py-8">
-            <Send className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-            <p className="text-sm text-gray-400">
+            <Send className="w-8 h-8 text-ink-45 mx-auto mb-2" />
+            <p className="text-[13px] text-ink-65">
               No projects ready. Translate and approve rules in a project first.
             </p>
             <Link
               href="/dashboard"
-              className="text-xs text-blue-400 hover:underline mt-2 inline-flex items-center gap-1"
+              className="text-xs font-semibold text-accent hover:underline mt-2 inline-flex items-center gap-1"
             >
               Go to Projects <ArrowRight className="w-3 h-3" />
             </Link>
@@ -369,14 +363,14 @@ export default function IntegratePage() {
               return (
                 <div
                   key={project.id}
-                  className="bg-white/[0.03] border border-white/10 rounded-lg"
+                  className="rounded-xl border border-g-line bg-g-bg"
                 >
                   <div className="flex items-center gap-4 px-4 py-3">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-white truncate">
+                      <p className="font-semibold truncate">
                         {project.name}
                       </p>
-                      <p className="text-xs text-gray-400">
+                      <p className="text-xs text-ink-65">
                         {vendorLabels[project.sourceVendor] ||
                           project.sourceVendor}{" "}
                         {"\u2192"}{" "}
@@ -386,12 +380,12 @@ export default function IntegratePage() {
                       </p>
                     </div>
                     <span
-                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase shrink-0 ${
+                      className={`badge shrink-0 ${
                         project.status === "APPROVED"
-                          ? "bg-green-500/10 text-green-400"
+                          ? "b-teal"
                           : project.status === "EXPORTED"
-                            ? "bg-blue-500/10 text-blue-400"
-                            : "bg-orange-500/10 text-orange-400"
+                            ? "b-blue"
+                            : "b-amber"
                       }`}
                     >
                       {project.status}
@@ -401,7 +395,7 @@ export default function IntegratePage() {
                       {showDescriptionFor !== project.id && (
                         <>
                           {isTranslatedOnly && (
-                            <span className="text-[10px] text-yellow-400">
+                            <span className="text-[11px] text-amber">
                               Approve rules first
                             </span>
                           )}
@@ -412,7 +406,7 @@ export default function IntegratePage() {
                               }
                             }}
                             disabled={pushing === project.id || !canPush}
-                            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 text-blue-400 text-sm font-medium hover:bg-blue-500/30 transition disabled:opacity-40"
+                            className="btn btn-primary btn-sm"
                           >
                             {pushing === project.id ? (
                               <Loader2 className="w-4 h-4 animate-spin" />
@@ -428,8 +422,8 @@ export default function IntegratePage() {
 
                   {/* Description input */}
                   {showDescriptionFor === project.id && (
-                    <div className="px-4 pb-3 border-t border-white/5 pt-3">
-                      <label className="text-xs text-gray-500 mb-1 block">
+                    <div className="px-4 pb-3 border-t border-line-2 pt-3">
+                      <label className="mb-1.5 block text-[13px] font-semibold">
                         Change Description (optional)
                       </label>
                       <div className="flex gap-2">
@@ -438,18 +432,18 @@ export default function IntegratePage() {
                           value={pushDescription}
                           onChange={(e) => setPushDescription(e.target.value)}
                           placeholder="e.g., Data center firewall migration — Phase 1"
-                          className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-500/50 focus:outline-none"
+                          className="input flex-1"
                         />
                         <button
                           onClick={() => setShowDescriptionFor(null)}
-                          className="px-3 py-2 text-sm text-gray-400 hover:text-white transition"
+                          className="btn btn-ghost btn-sm"
                         >
                           Cancel
                         </button>
                         <button
                           onClick={() => handlePush(project.id)}
                           disabled={pushing === project.id}
-                          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 text-blue-400 text-sm font-medium hover:bg-blue-500/30 transition disabled:opacity-40"
+                          className="btn btn-primary btn-sm"
                         >
                           {pushing === project.id ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
