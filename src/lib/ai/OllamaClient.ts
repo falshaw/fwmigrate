@@ -112,6 +112,9 @@ function recordFailure(): void {
   }
 }
 
+/** Cleared for the process when the server says it cannot take `think`. */
+let sendThinkFlag = true;
+
 export interface OllamaResponse {
   model: string;
   response: string;
@@ -147,6 +150,9 @@ export async function ollamaGenerate(
           model,
           prompt,
           stream: false,
+          // Explanations need no reasoning trace. Thinking models (gemma4,
+          // qwen3, ...) otherwise reason first and take several times longer.
+          ...(sendThinkFlag ? { think: false } : {}),
           ...(options?.json ? { format: "json" } : {}),
           options: { temperature: options?.temperature ?? 0.3 },
         }),
@@ -156,6 +162,14 @@ export async function ollamaGenerate(
 
       // Do not retry on 4xx errors (bad model name, etc.)
       if (res.status >= 400 && res.status < 500) {
+        const detail = await res.text().catch(() => "");
+        // Older Ollama builds or models may reject the think flag: drop it once
+        if (sendThinkFlag && /think/i.test(detail)) {
+          sendThinkFlag = false;
+          logger.warn("Ollama rejected think=false; retrying without it", { model });
+          attempt--;
+          continue;
+        }
         throw new Error(`Ollama error: ${res.status} ${res.statusText}`);
       }
 
