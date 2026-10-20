@@ -40,7 +40,7 @@ export default function TranslatePage() {
       .then((d) => {
         setLlmEnabled(!!d.llm?.enabled);
         if (d.explain?.status === "running") {
-          setExplain(d.explain);
+          setExplain(d.explain ? { ...d.explain, provider: d.explain.provider ?? d.llm?.provider } : d.explain);
           startPolling();
         }
       })
@@ -56,7 +56,7 @@ export default function TranslatePage() {
     timer.current = setInterval(async () => {
       try {
         const d = await fetch(`/api/v1/projects/${projectId}/translate`).then((r) => r.json());
-        setExplain(d.explain);
+        setExplain(d.explain ? { ...d.explain, provider: d.explain.provider ?? d.llm?.provider } : d.explain);
         if (d.explain?.status !== "running" && timer.current) {
           clearInterval(timer.current);
           timer.current = null;
