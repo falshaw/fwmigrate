@@ -185,15 +185,14 @@ export default function LoginPage() {
 
               <div
                 className="code mt-[22px] !rounded-[14px] !px-3.5 !py-3 !text-xs !whitespace-pre-wrap break-words"
-                aria-label="Example output"
+                aria-label="Quick start"
               >
-                <span className="c"># example</span>
+                <span className="k">$</span> docker compose up{" "}
+                <span className="s">-d --build</span>
                 {"\n"}
-                <span className="k">$</span> fwmigrate translate{" "}
-                <span className="s">--from</span> panos{" "}
-                <span className="s">--to</span> fortios
-                {"\n"}
-                <span className="c">412 rules · 355 clean · 23 flagged · 9 risky</span>
+                <span className="c">
+                  app · postgres · redis healthy · http://localhost:3004
+                </span>
               </div>
             </form>
             <div className="mt-[18px] text-center text-[11.5px] text-ink-45">
