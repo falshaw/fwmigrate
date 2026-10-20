@@ -1,21 +1,15 @@
 # =============================================================================
-# FW Migrate App - Docker Compose Configuration
+# FW Migrate - Docker Compose
 # =============================================================================
-#
-# Port Allocation:
-# - FW Migrate App: 3004, PostgreSQL: 5436, Redis: 6383
-#
-# Network: 172.21.0.0/24 (FW Migrate dedicated subnet)
-# - postgres: 172.21.0.10
-# - redis:    172.21.0.11
-# - app:      172.21.0.12
+# Host ports (127.0.0.1 only) come from .env: APP_PORT (3004),
+# POSTGRES_PORT (5436), REDIS_HOST_PORT (6383).
+# No fixed container names or subnets, so the stack can run under any
+# project name (docker compose -p <name>) next to other stacks.
 # =============================================================================
 
 services:
   fwmigrate-postgres:
     image: postgres:16.15-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
-    container_name: fwmigrate-postgres
-    hostname: fwmigrate-postgres
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -33,7 +27,7 @@ services:
       # App-specific user password (required — no fallback to superuser)
       FWMIGRATE_DB_PASSWORD: ${FWMIGRATE_DB_PASSWORD:?FWMIGRATE_DB_PASSWORD required in .env}
     ports:
-      - "127.0.0.1:5436:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5436}:5432"
     volumes:
       - fwmigrate-postgres-data:/var/lib/postgresql/data
       - ./postgres/init-user.sh:/docker-entrypoint-initdb.d/10-init-user.sh:ro
@@ -43,8 +37,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      fwmigrate-network:
-        ipv4_address: 172.21.0.10
+      - fwmigrate-network
     restart: "no"
     stop_grace_period: 30s
     deploy:
@@ -64,8 +57,6 @@ services:
 
   fwmigrate-redis:
     image: redis:8.10.0-alpine@sha256:978f0e01593e65eed801f2402944efcd936d43b5027e4908a7897baf88ed6241
-    container_name: fwmigrate-redis
-    hostname: fwmigrate-redis
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -76,7 +67,7 @@ services:
       - SETGID
       - DAC_OVERRIDE
     ports:
-      - "127.0.0.1:6383:6379"
+      - "127.0.0.1:${REDIS_HOST_PORT:-6383}:6379"
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required in .env}
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD required in .env}
@@ -88,8 +79,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      fwmigrate-network:
-        ipv4_address: 172.21.0.11
+      - fwmigrate-network
     restart: "no"
     stop_grace_period: 30s
     deploy:
@@ -113,8 +103,6 @@ services:
       dockerfile: Dockerfile
       args:
         - DOCKER_BUILD=1
-    container_name: fwmigrate-app
-    hostname: fwmigrate-app
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -131,32 +119,33 @@ services:
       - REDIS_HOST=fwmigrate-redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD required in .env}
-      - AUTH_SECRET=${AUTH_SECRET:?AUTH_SECRET required}
-      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3004}
+      - AUTH_SECRET=${AUTH_SECRET:?AUTH_SECRET required in .env (openssl rand -hex 32)}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:${APP_PORT:-3004}}
       - AUTH_TRUST_HOST=true
       # Ollama on the Docker host by default; point OLLAMA_HOST at any reachable Ollama
       - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:14b}
-      # LLM provider switch — "ollama" (default) or "claude" (host bridge)
-      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      # Optional LLM: "none" (default), "ollama" or "claude" (HTTP gateway)
+      - LLM_PROVIDER=${LLM_PROVIDER:-none}
+      - LLM_TIMEOUT_MS=${LLM_TIMEOUT_MS:-90000}
+      - LLM_EXPLAIN_MAX_RULES=${LLM_EXPLAIN_MAX_RULES:-50}
       - CLAUDE_BRIDGE_URL=${CLAUDE_BRIDGE_URL:-http://host.docker.internal:7777}
-      - CLAUDE_MODEL=${CLAUDE_MODEL:-opus}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-sonnet}
       - CLAUDE_BRIDGE_TOKEN=${CLAUDE_BRIDGE_TOKEN:-}
       # Optional external change-management system that approved rules are pushed to.
-      - CHANGE_MANAGER_API_URL=${CHANGE_MANAGER_API_URL:-http://host.docker.internal:3003}
+      - CHANGE_MANAGER_API_URL=${CHANGE_MANAGER_API_URL:-}
       - CHANGE_MANAGER_API_KEY=${CHANGE_MANAGER_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "127.0.0.1:3004:3000"
+      - "127.0.0.1:${APP_PORT:-3004}:3000"
     depends_on:
       fwmigrate-postgres:
         condition: service_healthy
       fwmigrate-redis:
         condition: service_healthy
     networks:
-      fwmigrate-network:
-        ipv4_address: 172.21.0.12
+      - fwmigrate-network
     restart: "no"
     stop_grace_period: 30s
     healthcheck:
@@ -195,6 +184,3 @@ volumes:
 networks:
   fwmigrate-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.21.0.0/24

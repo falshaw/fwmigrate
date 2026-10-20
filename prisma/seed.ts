@@ -3,8 +3,14 @@ import { PrismaClient } from "../src/generated/prisma";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { resolveDatabaseUrl } from "../src/lib/database-url";
 
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+const connectionString = resolveDatabaseUrl();
+if (!connectionString) {
+  console.error("Set POSTGRES_PASSWORD (or DATABASE_URL) in .env before seeding.");
+  process.exit(1);
+}
+const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
@@ -48,23 +54,6 @@ async function main() {
 
   console.log("Admin user created:", admin.email);
 
-  // Create sample migration project
-  const project = await prisma.migrationProject.upsert({
-    where: { id: "seed-project-1" },
-    update: {},
-    create: {
-      id: "seed-project-1",
-      name: "DC Perimeter Migration",
-      description: "Migrate Cisco ASA perimeter firewall rules to Palo Alto",
-      sourceVendor: "CISCO_ASA",
-      targetVendor: "PALO_ALTO",
-      status: "TRANSLATED",
-      createdById: admin.id,
-      organizationId: org.id,
-    },
-  });
-
-  console.log("Sample project created:", project.name);
   console.log("\nSeed completed successfully!");
 }
 
