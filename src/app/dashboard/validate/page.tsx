@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { VENDOR_LIST } from "@/lib/vendors";
 import { PageHeader } from "@/components/ProjectHeader";
+import { CONFIG_FILE_ACCEPT } from "@/lib/ui/config-file";
 
 const vendorOptions = VENDOR_LIST.map((v) => ({ value: v.id, label: v.label }));
 
@@ -71,6 +72,7 @@ export default function ValidatePage() {
   const [config, setConfig] = useState("");
   const [vendor, setVendor] = useState("PALO_ALTO");
   const [validating, setValidating] = useState(false);
+  const [pageError, setPageError] = useState("");
   const [result, setResult] = useState<ValidationResult | null>(null);
 
   // Project validation state
@@ -122,16 +124,20 @@ export default function ValidatePage() {
     if (!config.trim()) return;
     setValidating(true);
     setResult(null);
+    setPageError("");
     try {
       const res = await fetch("/api/v1/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ config, vendor }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || data.error || "");
       setResult(data);
-    } catch {
-      alert("Validation request failed");
+    } catch (e) {
+      setPageError(
+        `Validation could not run${e instanceof Error && e.message ? `: ${e.message}` : "."}`,
+      );
     } finally {
       setValidating(false);
     }
@@ -141,18 +147,22 @@ export default function ValidatePage() {
     if (!selectedProject) return;
     setValidatingProject(true);
     setProjectResult(null);
+    setPageError("");
     try {
       const res = await fetch(`/api/v1/validate/${selectedProject}`, {
         method: "POST",
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || data.error || "");
       setProjectResult(data);
       // Refresh history
       const histRes = await fetch(`/api/v1/validate/${selectedProject}`);
       const histData = await histRes.json();
       setValidationHistory(histData.results || []);
-    } catch {
-      alert("Project validation failed");
+    } catch (e) {
+      setPageError(
+        `Project validation could not run${e instanceof Error && e.message ? `: ${e.message}` : "."}`,
+      );
     } finally {
       setValidatingProject(false);
     }
@@ -181,6 +191,12 @@ export default function ValidatePage() {
         title="Validation"
         subtitle="Check firewall configuration syntax before deployment."
       />
+
+      {pageError && (
+        <div className="alert alert-error mb-4" role="alert">
+          {pageError}
+        </div>
+      )}
 
       {/* Tab Switcher */}
       <div className="mb-4 flex w-fit gap-1 rounded-full border border-g-line bg-g-bg2 p-1">
@@ -219,10 +235,11 @@ export default function ValidatePage() {
         <div className="card p-5 mb-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
             <div className="md:col-span-1">
-              <label className="mb-1.5 block text-[13px] font-semibold">
-                Target Vendor
+              <label htmlFor="validate-vendor" className="mb-1.5 block text-[13px] font-semibold">
+                Vendor
               </label>
               <select
+                id="validate-vendor"
                 value={vendor}
                 onChange={(e) => setVendor(e.target.value)}
                 className="input"
@@ -239,11 +256,13 @@ export default function ValidatePage() {
               </select>
             </div>
             <div className="md:col-span-2">
-              <label className="mb-1.5 block text-[13px] font-semibold">
-                Upload Config File
+              <label htmlFor="validate-file" className="mb-1.5 block text-[13px] font-semibold">
+                Config file
               </label>
               <input
+                id="validate-file"
                 type="file"
+                accept={CONFIG_FILE_ACCEPT}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) handleFileUpload(file);
@@ -267,7 +286,12 @@ export default function ValidatePage() {
             </div>
           </div>
 
+          <label htmlFor="validate-config" className="sr-only">
+            Configuration to validate
+          </label>
           <textarea
+            id="validate-config"
+            spellCheck={false}
             value={config}
             onChange={(e) => setConfig(e.target.value)}
             placeholder="Paste firewall configuration here..."
@@ -289,8 +313,8 @@ export default function ValidatePage() {
         <div className="card p-5 mb-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div className="md:col-span-2">
-              <label className="mb-1.5 block text-[13px] font-semibold">
-                Select Project
+              <label htmlFor="validate-project" className="mb-1.5 block text-[13px] font-semibold">
+                Project
               </label>
               {loadingProjects ? (
                 <div className="flex items-center gap-2 text-ink-65 text-[13px] py-2">
@@ -310,6 +334,7 @@ export default function ValidatePage() {
                 </p>
               ) : (
                 <select
+                  id="validate-project"
                   value={selectedProject}
                   onChange={(e) => {
                     setSelectedProject(e.target.value);

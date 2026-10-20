@@ -17,6 +17,7 @@ import {
 import { VENDOR_LIST } from "@/lib/vendors";
 import { PageHeader } from "@/components/ProjectHeader";
 import { detectVendor } from "@/lib/ui/detect-vendor";
+import { CONFIG_FILE_ACCEPT } from "@/lib/ui/config-file";
 
 interface BatchConfig {
   filename: string;
@@ -63,6 +64,7 @@ export default function BatchMigrationPage() {
   const [results, setResults] = useState<BatchResult[] | null>(null);
   const [runProgress, setRunProgress] = useState<number>(0);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [pageError, setPageError] = useState("");
   const dropRef = useRef<HTMLDivElement>(null);
 
   const fetchBatches = useCallback(() => {
@@ -155,19 +157,25 @@ export default function BatchMigrationPage() {
   async function handleCreate() {
     if (!name || configs.length === 0) return;
     setCreating(true);
+    setPageError("");
     try {
       const res = await fetch("/api/v1/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, configs }),
       });
-      if (!res.ok) throw new Error("Failed to create batch");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || data.error || "");
+      }
       setShowCreate(false);
       setName("");
       setConfigs([]);
       fetchBatches();
-    } catch {
-      alert("Failed to create batch migration");
+    } catch (e) {
+      setPageError(
+        `The batch was not created${e instanceof Error && e.message ? `: ${e.message}` : "."}`,
+      );
     } finally {
       setCreating(false);
     }
@@ -177,6 +185,7 @@ export default function BatchMigrationPage() {
     setRunning(batchId);
     setResults(null);
     setRunProgress(0);
+    setPageError("");
 
     // Find the batch to get total count for progress
     const batch = batches.find((b) => b.id === batchId);
@@ -196,14 +205,15 @@ export default function BatchMigrationPage() {
       });
       clearInterval(progressInterval);
       setRunProgress(100);
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) setPageError(`The batch did not run: ${data.detail || data.error || res.status}`);
       if (data.results) {
         setResults(data.results);
       }
       fetchBatches();
     } catch {
       clearInterval(progressInterval);
-      alert("Failed to run batch migration");
+      setPageError("The batch did not run: no answer from the server.");
     } finally {
       setTimeout(() => {
         setRunning(null);
@@ -239,6 +249,12 @@ export default function BatchMigrationPage() {
         }
       />
 
+      {pageError && (
+        <div className="alert alert-error mb-4" role="alert">
+          {pageError}
+        </div>
+      )}
+
       {/* Create Form */}
       {showCreate && (
         <div className="card p-5 mb-4">
@@ -248,10 +264,11 @@ export default function BatchMigrationPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="mb-1.5 block text-[13px] font-semibold">
-                Batch Name
+              <label htmlFor="batch-name" className="mb-1.5 block text-[13px] font-semibold">
+                Batch name
               </label>
               <input
+                id="batch-name"
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -260,10 +277,11 @@ export default function BatchMigrationPage() {
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-[13px] font-semibold">
-                Default Target Vendor
+              <label htmlFor="batch-target" className="mb-1.5 block text-[13px] font-semibold">
+                Default target vendor
               </label>
               <select
+                id="batch-target"
                 value={defaultTarget}
                 onChange={(e) => setDefaultTarget(e.target.value)}
                 className="input"
@@ -292,11 +310,20 @@ export default function BatchMigrationPage() {
                 ? "border-accent bg-accent-soft"
                 : "border-line bg-g-bg hover:border-accent/50"
             }`}
+            role="button"
+            tabIndex={0}
+            aria-label="Add config files: drop them here or press Enter to choose"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                (e.currentTarget as HTMLElement).click();
+              }
+            }}
             onClick={() => {
               const input = document.createElement("input");
               input.type = "file";
               input.multiple = true;
-              input.accept = ".txt,.conf,.cfg,.xml,.json,.log";
+              input.accept = CONFIG_FILE_ACCEPT;
               input.onchange = (e) => {
                 const files = (e.target as HTMLInputElement).files;
                 if (files) processFiles(files);
@@ -305,6 +332,7 @@ export default function BatchMigrationPage() {
             }}
           >
             <FileUp
+              aria-hidden
               className={`w-10 h-10 mx-auto mb-3 ${isDragOver ? "text-accent" : "text-ink-45"}`}
             />
             <p
@@ -346,19 +374,25 @@ export default function BatchMigrationPage() {
                         </span>
                       )}
                       <button
+                        type="button"
                         onClick={() => removeConfig(idx)}
-                        className="text-red hover:opacity-75 shrink-0"
+                        aria-label={`Remove ${config.filename || `config ${idx + 1}`}`}
+                        className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-red hover:bg-red-soft"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3.5 h-3.5" aria-hidden />
                       </button>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="mb-1 block text-[11px] text-ink-65">
+                        <label
+                          htmlFor={`batch-src-${idx}`}
+                          className="mb-1 block text-[11px] text-ink-65"
+                        >
                           Source
                         </label>
                         <select
+                          id={`batch-src-${idx}`}
                           value={config.sourceVendor}
                           onChange={(e) =>
                             updateConfig(idx, "sourceVendor", e.target.value)
@@ -377,10 +411,14 @@ export default function BatchMigrationPage() {
                         </select>
                       </div>
                       <div>
-                        <label className="mb-1 block text-[11px] text-ink-65">
+                        <label
+                          htmlFor={`batch-tgt-${idx}`}
+                          className="mb-1 block text-[11px] text-ink-65"
+                        >
                           Target
                         </label>
                         <select
+                          id={`batch-tgt-${idx}`}
                           value={config.targetVendor}
                           onChange={(e) =>
                             updateConfig(idx, "targetVendor", e.target.value)
@@ -404,6 +442,8 @@ export default function BatchMigrationPage() {
                       <div className="mt-2">
                         <input
                           type="file"
+                          accept={CONFIG_FILE_ACCEPT}
+                          aria-label={`Config file for config ${idx + 1}`}
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) handleFileUpload(idx, file);
