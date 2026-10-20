@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { VENDOR_LIST } from "@/lib/vendors";
 import { PageHeader } from "@/components/ProjectHeader";
+import { projectStatusBadge } from "@/lib/ui/rules";
 
 interface ConnectionStatus {
   configured: boolean;
@@ -57,7 +58,7 @@ interface PushResult {
 }
 
 const vendorLabels: Record<string, string> = Object.fromEntries(
-  VENDOR_LIST.map((v) => [v.id, v.label]),
+  VENDOR_LIST.map((v) => [v.id, v.short]),
 );
 
 export default function IntegratePage() {
@@ -365,7 +366,7 @@ export default function IntegratePage() {
                   key={project.id}
                   className="rounded-xl border border-g-line bg-g-bg"
                 >
-                  <div className="flex items-center gap-4 px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold truncate">
                         {project.name}
@@ -380,15 +381,9 @@ export default function IntegratePage() {
                       </p>
                     </div>
                     <span
-                      className={`badge shrink-0 ${
-                        project.status === "APPROVED"
-                          ? "b-teal"
-                          : project.status === "EXPORTED"
-                            ? "b-blue"
-                            : "b-amber"
-                      }`}
+                      className={`badge shrink-0 ${projectStatusBadge(project.status).cls}`}
                     >
-                      {project.status}
+                      {projectStatusBadge(project.status).label}
                     </span>
 
                     <div className="flex items-center gap-2 shrink-0">
