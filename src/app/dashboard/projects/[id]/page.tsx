@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ShieldCheck,
@@ -14,6 +14,8 @@ import {
 import { vendorShort } from "@/lib/vendors";
 import { StepPills } from "@/components/ProjectHeader";
 import { projectStatusBadge } from "@/lib/ui/rules";
+import { pushBlockReason, type ChangeManagerStatus } from "@/lib/ui/change-manager";
+import { DeleteProjectButton } from "@/components/DeleteProjectButton";
 
 interface Project {
   id: string;
@@ -26,6 +28,7 @@ interface Project {
   objectCount: number;
   parseConfidence?: number;
   createdAt: string;
+  canDelete?: boolean;
 }
 
 interface ValidationIssue {
@@ -58,29 +61,45 @@ interface ChangeManagerResult {
 
 export default function ProjectOverviewPage() {
   const params = useParams();
+  const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [validating, setValidating] = useState(false);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
+  const [validateError, setValidateError] = useState("");
+  const [cm, setCm] = useState<ChangeManagerStatus | null>(null);
   const [pushing, setPushing] = useState(false);
   const [pushResult, setPushResult] = useState<ChangeManagerResult | null>(null);
+  const [pushError, setPushError] = useState("");
 
   useEffect(() => {
     fetch(`/api/v1/projects/${params.id}`)
-      .then((r) => r.json())
-      .then((data) => setProject(data.project || data));
+      .then(async (r) => {
+        if (r.status === 404) throw new Error("This project does not exist or was deleted.");
+        if (!r.ok) throw new Error("Could not load the project.");
+        return r.json();
+      })
+      .then((data) => setProject(data.project || data))
+      .catch((e: Error) => setLoadError(e.message));
+    const off = { configured: false, connection: { connected: false } };
+    fetch("/api/v1/integrate/status")
+      .then((r) => (r.ok ? r.json() : off))
+      .then(setCm)
+      .catch(() => setCm(off));
   }, [params.id]);
 
   async function handleValidate() {
     if (!project) return;
     setValidating(true);
     setValidation(null);
+    setValidateError("");
     try {
-      // Fetch the exported config, then validate it
+      // Fetch the generated config, then validate it
       const exportRes = await fetch(
         `/api/v1/projects/${project.id}/export?type=config`,
       );
       if (!exportRes.ok) {
-        alert("Export the config first (approve rules).");
+        setValidateError("No config to validate yet: translate the project first.");
         setValidating(false);
         return;
       }
@@ -94,10 +113,11 @@ export default function ProjectOverviewPage() {
           vendor: project.targetVendor,
         }),
       });
+      if (!valRes.ok) throw new Error("validate failed");
       const data = await valRes.json();
       setValidation(data);
     } catch {
-      alert("Validation failed");
+      setValidateError("Validation could not run. Try again.");
     } finally {
       setValidating(false);
     }
@@ -107,20 +127,32 @@ export default function ProjectOverviewPage() {
     if (!project) return;
     setPushing(true);
     setPushResult(null);
+    setPushError("");
     try {
       const res = await fetch("/api/v1/integrate/change-manager", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId: project.id }),
       });
-      const data = await res.json();
-      setPushResult(data);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) setPushError(data.detail || data.error || "The push failed.");
+      else setPushResult(data);
     } catch {
-      alert("Failed to push to Change Manager");
+      setPushError("The push failed: Change Manager did not answer.");
     } finally {
       setPushing(false);
     }
   }
+
+  if (loadError)
+    return (
+      <div className="card p-8 text-center" role="alert">
+        <p className="font-semibold">{loadError}</p>
+        <Link href="/dashboard/projects" className="btn btn-ghost btn-sm mt-4">
+          Back to projects
+        </Link>
+      </div>
+    );
 
   if (!project)
     return (
@@ -136,7 +168,7 @@ export default function ProjectOverviewPage() {
     "APPROVED",
     "EXPORTED",
   ].includes(project.status);
-  const canPushChangeManager = ["APPROVED", "EXPORTED"].includes(project.status);
+  const pushBlocked = pushBlockReason(project.status, cm);
   const badge = projectStatusBadge(project.status);
 
   return (
@@ -153,7 +185,18 @@ export default function ProjectOverviewPage() {
             {vendorShort(project.sourceVendor)} → {vendorShort(project.targetVendor)}
           </p>
         </div>
-        <span className={`badge ${badge.cls}`}>{badge.label}</span>
+        <div className="flex items-center gap-2">
+          <span className={`badge ${badge.cls}`}>{badge.label}</span>
+          {project.canDelete && (
+            <DeleteProjectButton
+              project={project}
+              onDeleted={() => {
+                router.push("/dashboard/projects");
+                router.refresh();
+              }}
+            />
+          )}
+        </div>
       </div>
 
       <StepPills projectId={project.id} status={project.status} />
@@ -198,6 +241,14 @@ export default function ProjectOverviewPage() {
             )}
             Validate config
           </button>
+          {!canValidate && (
+            <p className="mt-2 text-xs text-ink-65">Translate the project first.</p>
+          )}
+          {validateError && (
+            <p className="mt-2 text-xs text-red" role="alert">
+              {validateError}
+            </p>
+          )}
         </div>
 
         <div className="card p-5">
@@ -210,7 +261,8 @@ export default function ProjectOverviewPage() {
           </p>
           <button
             onClick={handlePushToChangeManager}
-            disabled={!canPushChangeManager || pushing}
+            disabled={!!pushBlocked || pushing}
+            aria-describedby={pushBlocked ? "push-blocked" : undefined}
             className="btn btn-ghost btn-sm"
           >
             {pushing ? (
@@ -220,6 +272,21 @@ export default function ProjectOverviewPage() {
             )}
             Push to Change Manager
           </button>
+          {pushBlocked && (
+            <p id="push-blocked" className="mt-2 text-xs text-ink-65">
+              {pushBlocked}{" "}
+              {cm && !cm.connection.connected && (
+                <Link href="/dashboard/integrate" className="font-semibold text-accent hover:underline">
+                  Connection settings
+                </Link>
+              )}
+            </p>
+          )}
+          {pushError && (
+            <p className="mt-2 text-xs text-red" role="alert">
+              {pushError}
+            </p>
+          )}
         </div>
       </div>
 
