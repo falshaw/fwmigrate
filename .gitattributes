@@ -1,0 +1,21 @@
+# Normalise all text files to LF in the repository and in the working tree,
+# on every OS. Shell scripts mounted into Linux containers (postgres/init-user.sh)
+# break with CRLF ("/bin/bash^M: bad interpreter").
+* text=auto eol=lf
+
+*.sh   text eol=lf
+
+# Binary files: never touch line endings, never diff as text
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.pdf  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.otf  binary
+*.zip  binary
+*.gz   binary
