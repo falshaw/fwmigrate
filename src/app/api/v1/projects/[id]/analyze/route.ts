@@ -128,7 +128,9 @@ export const POST = apiHandler(
           category: issue.type,
           severity: issue.severity,
           ruleId: String(issue.rulePosition),
-          title: `${issue.type.charAt(0).toUpperCase() + issue.type.slice(1)}: #${issue.rulePosition} ${issue.ruleName}`,
+          title:
+            `${issue.type.charAt(0).toUpperCase() + issue.type.slice(1)}: #${issue.rulePosition} ${issue.ruleName}` +
+            (issue.relatedRulePosition ? ` / #${issue.relatedRulePosition} ${issue.relatedRuleName}` : ""),
           description: issue.description,
           recommendation: issue.recommendation,
         })),

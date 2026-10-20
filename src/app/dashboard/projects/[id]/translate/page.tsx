@@ -19,6 +19,8 @@ interface TranslateResult {
   averageConfidence: number;
   rulesWithReviewFlags: number;
   durationMs: number;
+  changedRules?: number;
+  unchangedRules?: number;
   explain: ExplainState;
 }
 
@@ -28,7 +30,8 @@ export default function TranslatePage() {
   const projectId = params.id as string;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [llmEnabled, setLlmEnabled] = useState(false);
+  // null until the server has said whether an LLM is configured
+  const [llmEnabled, setLlmEnabled] = useState<boolean | null>(null);
   const [withExplanations, setWithExplanations] = useState(true);
   const [result, setResult] = useState<TranslateResult | null>(null);
   const [explain, setExplain] = useState<ExplainState | null>(null);
@@ -44,7 +47,7 @@ export default function TranslatePage() {
           startPolling();
         }
       })
-      .catch(() => undefined);
+      .catch(() => setLlmEnabled(false));
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
@@ -73,7 +76,7 @@ export default function TranslatePage() {
     const res = await fetch(`/api/v1/projects/${projectId}/translate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ explain: llmEnabled && withExplanations }),
+      body: JSON.stringify({ explain: !!llmEnabled && withExplanations }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -97,7 +100,11 @@ export default function TranslatePage() {
           a REVIEW flag and a lower confidence.
         </p>
 
-        {llmEnabled ? (
+        {llmEnabled === null ? (
+          <p className="text-xs text-ink-45" aria-busy="true">
+            Checking for an LLM…
+          </p>
+        ) : llmEnabled ? (
           <label className="flex items-center gap-2.5 text-[13px]">
             <input
               type="checkbox"
@@ -120,7 +127,11 @@ export default function TranslatePage() {
         )}
 
         <div>
-          <button onClick={handleTranslate} disabled={loading} className="btn btn-primary">
+          <button
+            onClick={handleTranslate}
+            disabled={loading || llmEnabled === null}
+            className="btn btn-primary"
+          >
             {loading ? "Translating…" : result ? "Translate again" : "Translate all rules"}
           </button>
         </div>
@@ -140,6 +151,13 @@ export default function TranslatePage() {
                 </div>
               ))}
             </div>
+            {typeof result.changedRules === "number" && (result.unchangedRules ?? 0) > 0 && (
+              <p className="text-[13px] text-ink-65" role="status">
+                {result.changedRules === 0
+                  ? "Every rule came out the same as before: reviews and the project status are kept."
+                  : `${result.changedRules} rules changed and go back to review; ${result.unchangedRules} unchanged rules keep their review.`}
+              </p>
+            )}
             <div>
               <button
                 onClick={() => router.push(`/dashboard/projects/${projectId}/review`)}
