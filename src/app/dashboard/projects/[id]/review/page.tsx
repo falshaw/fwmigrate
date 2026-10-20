@@ -74,6 +74,8 @@ export default function ReviewPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   useEffect(() => {
     fetchAllRules<NormalizedRuleWithTranslation>(projectId)
@@ -95,11 +97,24 @@ export default function ReviewPage() {
   }, [projectId]);
 
   async function reviewRule(normalizedRuleId: string, status: string) {
-    await fetch(`/api/v1/projects/${projectId}/rules/${normalizedRuleId}`, {
+    setSaving(true);
+    setSaveError("");
+    const res = await fetch(`/api/v1/projects/${projectId}/rules/${normalizedRuleId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reviewStatus: status }),
-    });
+    }).catch(() => null);
+    setSaving(false);
+    // Only show the decision once the server has stored it.
+    if (!res || !res.ok) {
+      const data = res ? await res.json().catch(() => ({})) : {};
+      setSaveError(
+        res?.status === 429
+          ? `Too many changes in a short time. Wait ${data.retryAfter ?? "a few"} seconds and try again.`
+          : data.error || "The decision was not saved. Try again.",
+      );
+      return;
+    }
     setRules((prev) =>
       prev.map((r) =>
         r.id === normalizedRuleId
@@ -215,7 +230,16 @@ export default function ReviewPage() {
             </ul>
           </div>
 
-          {selected && <RuleDetail rule={selected} src={src} tgt={tgt} onReview={reviewRule} />}
+          {selected && (
+            <RuleDetail
+              rule={selected}
+              src={src}
+              tgt={tgt}
+              onReview={reviewRule}
+              saving={saving}
+              error={saveError}
+            />
+          )}
         </div>
       )}
     </div>
@@ -227,11 +251,15 @@ function RuleDetail({
   src,
   tgt,
   onReview,
+  saving,
+  error,
 }: {
   rule: Rule;
   src: string;
   tgt: string;
   onReview: (id: string, status: string) => void;
+  saving: boolean;
+  error: string;
 }) {
   const t = rule.translatedRule;
   const warnings = t.warnings ?? [];
@@ -292,9 +320,16 @@ function RuleDetail({
         </ul>
       )}
 
+      {error && (
+        <div className="alert alert-error" role="alert">
+          {error}
+        </div>
+      )}
+
       <div className="flex flex-wrap justify-end gap-2">
         <button
           onClick={() => onReview(rule.id, "SKIPPED")}
+          disabled={saving}
           className="btn btn-ghost btn-sm"
           aria-pressed={t.reviewStatus === "SKIPPED"}
         >
@@ -302,6 +337,7 @@ function RuleDetail({
         </button>
         <button
           onClick={() => onReview(rule.id, "FLAGGED")}
+          disabled={saving}
           className="btn btn-danger btn-sm"
           aria-pressed={t.reviewStatus === "FLAGGED"}
         >
@@ -309,6 +345,7 @@ function RuleDetail({
         </button>
         <button
           onClick={() => onReview(rule.id, "APPROVED")}
+          disabled={saving}
           className="btn btn-primary btn-sm"
           aria-pressed={t.reviewStatus === "APPROVED"}
         >

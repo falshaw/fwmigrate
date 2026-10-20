@@ -33,9 +33,11 @@ export default function ExportPage() {
   const params = useParams();
   const projectId = params.id as string;
   const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState("");
 
   async function download(type: string) {
     setDownloading(true);
+    setError("");
     const res = await fetch(`/api/v1/projects/${projectId}/export?type=${type}`);
     if (res.ok) {
       const blob = await res.blob();
@@ -45,6 +47,9 @@ export default function ExportPage() {
       a.download = `fwmigrate-${type}-${projectId}.txt`;
       a.click();
       URL.revokeObjectURL(url);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setError(data.detail || data.error || `Download failed (${res.status}).`);
     }
     setDownloading(false);
   }
@@ -52,6 +57,12 @@ export default function ExportPage() {
   return (
     <div>
       <ProjectHeader projectId={projectId} step="export" title="Export" />
+
+      {error && (
+        <div className="alert alert-error mb-4" role="alert">
+          {error}
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-3">
         {DOWNLOADS.map((d) => (
