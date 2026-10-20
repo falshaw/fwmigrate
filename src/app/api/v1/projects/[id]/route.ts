@@ -10,13 +10,14 @@ import prisma from "@/lib/prisma";
 import { notFound } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { updateProjectSchema } from "@/lib/validators/project";
+import { cancelExplainJob } from "@/lib/ai/explainJobs";
 
 /**
  * GET /api/v1/projects/[id]
  * Retrieve a single project with full details including source config,
  * and counts for normalized rules, translated rules, analysis results, and zone mappings.
  */
-export const GET = apiHandler(async ({ params, organizationId }) => {
+export const GET = apiHandler(async ({ params, organizationId, user }) => {
   const project = await prisma.migrationProject.findUnique({
     where: { id: params.id },
     include: {
@@ -41,7 +42,8 @@ export const GET = apiHandler(async ({ params, organizationId }) => {
   if (project.organizationId !== organizationId)
     return notFound("Project not found");
 
-  return NextResponse.json(project);
+  // Deleting is admin-only (see DELETE); the UI shows the button from this flag
+  return NextResponse.json({ ...project, canDelete: user.role === "ADMIN" });
 });
 
 /**
@@ -135,6 +137,9 @@ export const DELETE = apiHandler(
     if (existing.organizationId !== organizationId)
       return notFound("Project not found");
 
+    // Cascades to every project table (source config, rules, objects, NAT,
+    // analysis, translations, zone mappings, plan, validations, versions)
+    cancelExplainJob(params.id);
     await prisma.migrationProject.delete({ where: { id: params.id } });
 
     logger.info("Project deleted", { projectId: params.id });

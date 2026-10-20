@@ -23,7 +23,13 @@ const ACTIVE = [
 ];
 const DONE = ["APPROVED", "EXPORTED"];
 
-export function ProjectsView({ projects }: { projects: OverviewProject[] }) {
+export function ProjectsView({
+  projects,
+  canDelete = false,
+}: {
+  projects: OverviewProject[];
+  canDelete?: boolean;
+}) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const q = query.trim().toLowerCase();
@@ -148,7 +154,7 @@ export function ProjectsView({ projects }: { projects: OverviewProject[] }) {
             No projects match the filter.
           </p>
         ) : (
-          <ProjectsTable projects={shown} />
+          <ProjectsTable projects={shown} canDelete={canDelete} />
         )}
         {projects.length > 0 && (
           <div className="border-t border-line-2 px-[18px] py-2.5 text-xs text-ink-45" role="status">
