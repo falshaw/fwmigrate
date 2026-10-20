@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { VENDOR_LIST } from "@/lib/vendors";
 import { PageHeader } from "@/components/ProjectHeader";
+import { detectVendor } from "@/lib/ui/detect-vendor";
 
 interface BatchConfig {
   filename: string;
@@ -49,31 +50,6 @@ const vendorOptions = VENDOR_LIST.map((v) => ({ value: v.id, label: v.label }));
 const vendorLabels: Record<string, string> = Object.fromEntries(
   VENDOR_LIST.map((v) => [v.id, v.short]),
 );
-
-function detectVendor(content: string): string {
-  const trimmed = content.trim();
-  const lower = trimmed.toLowerCase();
-  if (lower.includes("config firewall policy") || lower.includes("set srcintf"))
-    return "FORTINET";
-  if (
-    lower.startsWith("<") ||
-    lower.includes("rulebase security rules")
-  )
-    return "PALO_ALTO";
-  if (lower.includes("access-list") && lower.includes("extended"))
-    return "CISCO_ASA";
-  if (
-    lower.startsWith("{") &&
-    (lower.includes('"objects-dictionary"') || lower.includes('"rulebase"'))
-  )
-    return "CHECKPOINT";
-  if (
-    lower.includes("security policies from-zone") ||
-    lower.includes("security-zone")
-  )
-    return "JUNIPER_SRX";
-  return "PALO_ALTO";
-}
 
 export default function BatchMigrationPage() {
   const [batches, setBatches] = useState<BatchMigration[]>([]);
@@ -168,6 +144,8 @@ export default function BatchMigrationPage() {
         ...updated[index],
         rawConfig: content,
         filename: file.name,
+        // Same auto-detection as the drop zone; was left on the PAN-OS default.
+        sourceVendor: detectVendor(content),
       };
       setConfigs(updated);
     };

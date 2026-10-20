@@ -41,7 +41,7 @@ export function ProjectsTable({ projects }: { projects: OverviewProject[] }) {
             const href = `/dashboard/projects/${p.id}`;
             return (
               <tr key={p.id} className="cursor-pointer" onClick={() => router.push(href)}>
-                <td className="max-w-[240px]">
+                <td className="max-w-[150px] sm:max-w-[240px]">
                   <Link
                     href={href}
                     className="block truncate font-semibold hover:text-accent"

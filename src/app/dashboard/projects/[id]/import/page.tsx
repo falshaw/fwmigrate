@@ -28,7 +28,8 @@ export default function ImportPage() {
     });
 
     if (!res.ok) {
-      setError("Import failed");
+      const data = await res.json().catch(() => ({}));
+      setError(`Import failed: ${data.detail || data.error || res.status}`);
       setLoading(false);
       return;
     }
@@ -38,7 +39,8 @@ export default function ImportPage() {
       method: "POST",
     });
     if (!res.ok) {
-      setError("Parse failed");
+      const data = await res.json().catch(() => ({}));
+      setError(`Parse failed: ${data.detail || data.error || res.status}`);
       setLoading(false);
       return;
     }
