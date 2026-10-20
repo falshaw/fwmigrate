@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { ProjectHeader } from "@/components/ProjectHeader";
 
 interface AnalysisResult {
   id: string;
@@ -12,9 +13,19 @@ interface AnalysisResult {
   recommendation?: string;
 }
 
+const severityBadge: Record<string, string> = {
+  critical: "b-red",
+  high: "b-red",
+  warning: "b-amber",
+  medium: "b-amber",
+  low: "b-blue",
+  info: "b-blue",
+};
+
 export default function AnalysisPage() {
   const params = useParams();
   const router = useRouter();
+  const projectId = params.id as string;
   const [results, setResults] = useState<AnalysisResult[]>([]);
   const [ruleCount, setRuleCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -23,7 +34,7 @@ export default function AnalysisPage() {
 
   useEffect(() => {
     // Load project info and existing analysis results
-    fetch(`/api/v1/projects/${params.id}/analyze`)
+    fetch(`/api/v1/projects/${projectId}/analyze`)
       .then((r) => {
         if (!r.ok) throw new Error("Failed to load");
         return r.json();
@@ -34,17 +45,17 @@ export default function AnalysisPage() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [params.id]);
+  }, [projectId]);
 
   async function runAnalysis() {
     setAnalyzing(true);
     setError("");
-    const res = await fetch(`/api/v1/projects/${params.id}/analyze`, {
+    const res = await fetch(`/api/v1/projects/${projectId}/analyze`, {
       method: "POST",
     });
     if (res.ok) {
       // Reload results after analysis
-      const getRes = await fetch(`/api/v1/projects/${params.id}/analyze`);
+      const getRes = await fetch(`/api/v1/projects/${projectId}/analyze`);
       if (getRes.ok) {
         const data = await getRes.json();
         setResults(data.results || []);
@@ -57,86 +68,69 @@ export default function AnalysisPage() {
     setAnalyzing(false);
   }
 
-  const severityColors: Record<string, string> = {
-    critical: "bg-red-500/20 text-red-400 border-red-500/30",
-    high: "bg-red-500/20 text-red-400 border-red-500/30",
-    warning: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-    medium: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-    low: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    info: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  };
-
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Rule Analysis</h1>
-          {ruleCount > 0 && (
-            <p className="text-sm text-gray-400 mt-1">
-              {ruleCount} rules parsed
-            </p>
-          )}
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={runAnalysis}
-            disabled={analyzing}
-            className="btn-secondary disabled:opacity-50"
-          >
-            {analyzing ? "Analyzing..." : "Run Analysis"}
-          </button>
-          <button
-            onClick={() =>
-              router.push(`/dashboard/projects/${params.id}/translate`)
-            }
-            className="btn-brand"
-          >
-            Proceed to Translation
-          </button>
-        </div>
-      </div>
+      <ProjectHeader
+        projectId={projectId}
+        step="analysis"
+        title="Rule analysis"
+        subtitle={ruleCount > 0 ? `${ruleCount} rules parsed` : undefined}
+        actions={
+          <>
+            <button onClick={runAnalysis} disabled={analyzing} className="btn btn-ghost btn-sm">
+              {analyzing ? "Analysing…" : "Run analysis"}
+            </button>
+            <button
+              onClick={() => router.push(`/dashboard/projects/${projectId}/translate`)}
+              className="btn btn-primary btn-sm"
+            >
+              Continue to translation
+            </button>
+          </>
+        }
+      />
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm p-3 rounded-lg mb-4">
+        <div className="alert alert-error mb-4" role="alert">
           {error}
         </div>
       )}
 
       {loading ? (
-        <p className="text-gray-400">Loading...</p>
+        <div className="grid gap-3" aria-busy="true">
+          <div className="skeleton h-14" />
+          <div className="skeleton h-24" />
+        </div>
       ) : results.length === 0 ? (
-        <div className="card-luxury p-8 text-center">
-          <p className="text-gray-400 mb-4">
-            No analysis results yet. Click &quot;Run Analysis&quot; to analyze
-            the parsed rules.
-          </p>
+        <div className="card p-8 text-center text-[13px] text-ink-65">
+          No analysis results yet. Run the analysis to find shadowed, unused and over-permissive
+          rules.
         </div>
       ) : (
-        <div className="space-y-3">
-          <div className="card-luxury p-4 mb-4">
-            <p className="text-white font-medium">
-              {results.length} findings across {ruleCount} rules
-            </p>
+        <div className="card overflow-hidden">
+          <div className="flex items-center justify-between border-b border-line px-[18px] py-3">
+            <b>{results.length} findings</b>
+            <span className="text-ink-65">across {ruleCount} rules</span>
           </div>
-          {results.map((r) => (
-            <div
-              key={r.id}
-              className={`p-4 rounded-lg border ${severityColors[r.severity] || "bg-white/5 border-white/10"}`}
-            >
-              <div className="flex justify-between items-start">
-                <h3 className="font-medium text-white">{r.title}</h3>
-                <span className="text-xs uppercase font-bold">
-                  {r.severity}
-                </span>
-              </div>
-              <p className="text-sm text-gray-300 mt-1">{r.description}</p>
-              {r.recommendation && (
-                <p className="text-sm text-gray-400 mt-2 italic">
-                  {r.recommendation}
-                </p>
-              )}
-            </div>
-          ))}
+          <ul>
+            {results.map((r) => (
+              <li key={r.id} className="border-b border-line-2 px-[18px] py-4 last:border-b-0">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <h2 className="!text-sm">{r.title}</h2>
+                  <span className={`badge ${severityBadge[r.severity] ?? "b-grey"}`}>
+                    {r.severity}
+                  </span>
+                </div>
+                <p className="mt-1 text-[13px] text-ink-65">{r.description}</p>
+                {r.recommendation && (
+                  <p className="mt-2 text-[13px]">
+                    <span className="eyebrow mr-2">Fix</span>
+                    {r.recommendation}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>

@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { VENDOR_LIST } from "@/lib/vendors";
+import { ArrowRight } from "lucide-react";
+import { VENDOR_LIST, vendorShort } from "@/lib/vendors";
+import { PageHeader } from "@/components/ProjectHeader";
 
 const vendors = VENDOR_LIST.map((v) => ({ value: v.id, label: v.label }));
 
@@ -40,92 +42,82 @@ export default function NewProjectPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold text-white mb-8">
-        New Migration Project
-      </h1>
+    <div className="max-w-2xl">
+      <PageHeader
+        eyebrow="Projects"
+        title="New migration"
+        subtitle="Name the project and pick the source and target vendor. You paste the config next."
+      />
 
-      <form onSubmit={handleSubmit} className="card-luxury p-8 space-y-6">
+      <form onSubmit={handleSubmit} className="card grid gap-5 p-5 sm:p-6">
         {error && (
-          <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm p-3 rounded-lg">
+          <div className="alert alert-error" role="alert">
             {error}
           </div>
         )}
 
         <div>
-          <label className="block text-sm text-gray-300 mb-1">
-            Project Name
+          <label htmlFor="name" className="mb-1.5 block text-[13px] font-semibold">
+            Project name
           </label>
           <input
+            id="name"
             type="text"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
-            placeholder="e.g., DC Firewall Migration Phase 1"
-            className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white focus:border-orange-500 focus:outline-none"
+            placeholder="e.g. DC edge cutover"
+            className="input"
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm text-gray-300 mb-1">
-            Description (optional)
+          <label htmlFor="description" className="mb-1.5 block text-[13px] font-semibold">
+            Description <span className="font-normal text-ink-45">(optional)</span>
           </label>
           <textarea
+            id="description"
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
             rows={3}
-            className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white focus:border-orange-500 focus:outline-none"
+            className="input"
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid gap-5 sm:grid-cols-2">
           <div>
-            <label className="block text-sm text-gray-300 mb-1">
-              Source Vendor
+            <label htmlFor="source" className="mb-1.5 block text-[13px] font-semibold">
+              Source vendor
             </label>
             <select
+              id="source"
               value={form.sourceVendor}
-              onChange={(e) =>
-                setForm({ ...form, sourceVendor: e.target.value })
-              }
-              className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white focus:border-orange-500 focus:outline-none"
+              onChange={(e) => setForm({ ...form, sourceVendor: e.target.value })}
+              className="input"
               required
             >
-              <option value="" className="bg-gray-900 text-white">
-                Select source...
-              </option>
+              <option value="">Select source…</option>
               {vendors.map((v) => (
-                <option
-                  key={v.value}
-                  value={v.value}
-                  className="bg-gray-900 text-white"
-                >
+                <option key={v.value} value={v.value}>
                   {v.label}
                 </option>
               ))}
             </select>
           </div>
           <div>
-            <label className="block text-sm text-gray-300 mb-1">
-              Target Vendor
+            <label htmlFor="target" className="mb-1.5 block text-[13px] font-semibold">
+              Target vendor
             </label>
             <select
+              id="target"
               value={form.targetVendor}
-              onChange={(e) =>
-                setForm({ ...form, targetVendor: e.target.value })
-              }
-              className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white focus:border-orange-500 focus:outline-none"
+              onChange={(e) => setForm({ ...form, targetVendor: e.target.value })}
+              className="input"
               required
             >
-              <option value="" className="bg-gray-900 text-white">
-                Select target...
-              </option>
+              <option value="">Select target…</option>
               {vendors.map((v) => (
-                <option
-                  key={v.value}
-                  value={v.value}
-                  className="bg-gray-900 text-white"
-                >
+                <option key={v.value} value={v.value}>
                   {v.label}
                 </option>
               ))}
@@ -134,24 +126,18 @@ export default function NewProjectPage() {
         </div>
 
         {form.sourceVendor && form.targetVendor && (
-          <div className="text-center py-4">
-            <span className="text-lg text-gray-300">
-              {vendors.find((v) => v.value === form.sourceVendor)?.label}
-            </span>
-            <span className="text-2xl text-orange-500 mx-4">→</span>
-            <span className="text-lg text-gray-300">
-              {vendors.find((v) => v.value === form.targetVendor)?.label}
-            </span>
+          <div className="flex items-center justify-center gap-3 rounded-xl border border-g-line bg-g-bg py-3 font-mono text-[13px]">
+            <span>{vendorShort(form.sourceVendor)}</span>
+            <ArrowRight className="h-4 w-4 text-accent" aria-label="to" />
+            <span>{vendorShort(form.targetVendor)}</span>
           </div>
         )}
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="btn-brand w-full disabled:opacity-50"
-        >
-          {loading ? "Creating..." : "Create Project & Import Config"}
-        </button>
+        <div className="flex justify-end">
+          <button type="submit" disabled={loading} className="btn btn-primary">
+            {loading ? "Creating…" : "Create project and import config"}
+          </button>
+        </div>
       </form>
     </div>
   );
