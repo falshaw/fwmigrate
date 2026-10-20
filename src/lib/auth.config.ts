@@ -49,7 +49,7 @@ export const authConfig: NextAuthConfig = {
           (route) => pathname === route || pathname.startsWith(route + "/"),
         )
       ) {
-        if (isLoggedIn && (pathname === "/login" || pathname === "/register")) {
+        if (isLoggedIn && pathname === "/login") {
           return Response.redirect(new URL("/dashboard", request.nextUrl));
         }
         return true;
