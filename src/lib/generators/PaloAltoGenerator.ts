@@ -2,149 +2,173 @@
  * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
+ *
+ * PAN-OS set-command generator.
  */
 
-import type {
-  IConfigGenerator,
-  GeneratorResult,
-  RuleConfig,
-  RollbackCommand,
-  ZoneMapping,
-} from "./GeneratorInterface";
-import type {
-  FirewallVendor,
-  NormalizedRule,
-  NormalizedObject,
-} from "../parsers/types";
+import type { RollbackCommand, ZoneMapping } from "./GeneratorInterface";
+import type { FirewallVendor, NormalizedRule } from "../parsers/types";
+import {
+  BaseGenerator,
+  GenContext,
+  analyseRule,
+  confidenceFrom,
+  describeRule,
+  quote,
+  unknownAddressWarning,
+  type RuleTranslation,
+} from "./base";
+import { SERVICE_CATALOG, type ResolvedService } from "./services";
 
-export class PaloAltoGenerator implements IConfigGenerator {
+const NAME_MAX = 63;
+
+export class PaloAltoGenerator extends BaseGenerator {
   vendor: FirewallVendor = "PALO_ALTO";
+  commentPrefix = "#";
+  protected targetLabel = "a PAN-OS security rule";
 
-  async generate(
-    rules: NormalizedRule[],
-    objects: NormalizedObject[],
-    zoneMappings: ZoneMapping[],
-  ): Promise<GeneratorResult> {
-    const warnings: string[] = [];
-    const objectsCreated: string[] = [];
-    const ruleConfigs: RuleConfig[] = [];
-    const configLines: string[] = [];
+  protected translateRule(rule: NormalizedRule, ctx: GenContext): RuleTranslation {
+    const facts = analyseRule(rule, ctx, this.vendor);
+    const warnings = [...facts.warnings];
+    const unknown: string[] = [];
+    let extraPenalty = 0;
 
-    // Generate address objects first
-    configLines.push("# Address Objects");
-    for (const obj of objects) {
-      if (obj.objectType === "address") {
-        for (const member of obj.members) {
-          configLines.push(`set address "${obj.name}" ip-netmask ${member}`);
-          objectsCreated.push(obj.name);
+    const name = this.sanitizeName(rule.name);
+    if (name !== rule.name) warnings.push(`Rule name normalised to "${name}" (PAN-OS naming rules).`);
+
+    const from = ctx.mapZone(rule.sourceZone) ?? "any";
+    const to = ctx.mapZone(rule.destinationZone) ?? "any";
+
+    const addrs = (tokens: string[]) => {
+      const names = tokens.map((t) => ctx.useAddress(t, unknown));
+      return names.includes(null) || names.length === 0
+        ? ["any"]
+        : [...new Set(names as string[])];
+    };
+    const source = addrs(rule.sources);
+    const destination = addrs(rule.destinations);
+
+    let applications = ["any"];
+    let services: string[];
+    const srcApps = facts.services.applications;
+
+    if (facts.forceDisable) {
+      services = ["any"];
+    } else if (srcApps.length) {
+      // PAN-OS source: keep App-ID as is
+      applications = srcApps;
+      services = facts.services.fromApplicationDefault
+        ? ["application-default"]
+        : facts.services.any
+          ? ["any"]
+          : facts.services.services.flatMap((s) => this.serviceNames(s, ctx));
+    } else if (facts.services.any) {
+      services = ["any"];
+    } else {
+      const icmp = facts.services.services.filter((s) => s.specs.every((x) => x.proto === "icmp"));
+      const ports = facts.services.services.filter((s) => !s.specs.every((x) => x.proto === "icmp"));
+      if (icmp.length && !ports.length) {
+        // PAN-OS has no ICMP service objects: ICMP is matched by App-ID
+        applications = [...new Set(icmp.map((s) => (s.specs.some((x) => x.icmpType === 8) && s.specs.length === 1 ? "ping" : "icmp")))];
+        services = ["application-default"];
+        warnings.push(`ICMP translated to App-ID ${applications.join(", ")} with application-default.`);
+      } else {
+        if (icmp.length) {
+          warnings.push(
+            "REVIEW: rule mixes ICMP with TCP/UDP; PAN-OS matches ICMP by App-ID — add a separate rule for ICMP (ping/icmp).",
+          );
+          extraPenalty += 0.15;
         }
-      } else if (obj.objectType === "address-group") {
-        const members = obj.members.map((m) => `"${m}"`).join(" ");
-        configLines.push(
-          `set address-group "${obj.name}" static [ ${members} ]`,
-        );
-        objectsCreated.push(obj.name);
+        services = [...new Set(ports.flatMap((s) => this.serviceNames(s, ctx)))];
       }
     }
 
-    configLines.push("");
-    configLines.push("# Security Rules");
+    const action = rule.action === "permit" ? "allow" : rule.action === "drop" ? "drop" : "deny";
+    const r = `set rulebase security rules ${quote(name)}`;
+    const list = (xs: string[]) => `[ ${xs.map(quote).join(" ")} ]`;
+    const lines = [
+      `${r} from ${list([from])}`,
+      `${r} to ${list([to])}`,
+      `${r} source ${list(source)}`,
+      `${r} destination ${list(destination)}`,
+      `${r} application ${list(applications)}`,
+      `${r} service ${list(services)}`,
+      `${r} action ${action}`,
+      `${r} log-end ${rule.logging ? "yes" : "no"}`,
+    ];
+    const desc = [rule.description, facts.forceDisable ? "REVIEW: service unresolved, disabled by migration" : ""]
+      .filter(Boolean)
+      .join(" | ");
+    if (desc) lines.push(`${r} description ${quote(desc.slice(0, 1023))}`);
+    if (!rule.enabled || facts.forceDisable) lines.push(`${r} disabled yes`);
 
-    for (const rule of rules) {
-      const config = this.generateRule(rule, zoneMappings);
-      configLines.push(config);
-
-      const ruleWarnings: string[] = [];
-      if (rule.sources.includes("any") && rule.destinations.includes("any")) {
-        ruleWarnings.push(
-          "Rule has any-any source/destination — review for overly permissive access",
-        );
-      }
-      if (rule.services.includes("any")) {
-        ruleWarnings.push(
-          "Rule allows all services — consider restricting to specific applications",
-        );
-      }
-
-      ruleConfigs.push({
-        position: rule.position,
-        ruleName: rule.name,
-        config,
-        explanation: `${rule.action === "permit" ? "Allow" : "Deny"} traffic from ${rule.sources.join(",")} to ${rule.destinations.join(",")} on ${rule.services.join(",")}`,
-        warnings: ruleWarnings,
-      });
-    }
-
+    warnings.push(...unknownAddressWarning(unknown));
     return {
-      config: configLines.join("\n"),
-      ruleConfigs,
+      config: lines.join("\n"),
       warnings,
-      objectsCreated,
+      confidence: confidenceFrom(facts, extraPenalty, new Set(unknown).size),
+      explanation: describeRule(rule, facts, this.targetLabel),
     };
   }
 
-  generateRule(rule: NormalizedRule, zoneMappings: ZoneMapping[]): string {
-    const name = this.sanitizeName(rule.name);
-    const fromZone = this.mapZone(rule.sourceZone, zoneMappings) || "any";
-    const toZone = this.mapZone(rule.destinationZone, zoneMappings) || "any";
-    const action =
-      rule.action === "permit"
-        ? "allow"
-        : rule.action === "drop"
-          ? "drop"
-          : "deny";
-
-    const lines: string[] = [];
-    lines.push(`set rulebase security rules "${name}" from "${fromZone}"`);
-    lines.push(`set rulebase security rules "${name}" to "${toZone}"`);
-    lines.push(
-      `set rulebase security rules "${name}" source [ ${rule.sources.map((s) => `"${s}"`).join(" ")} ]`,
-    );
-    lines.push(
-      `set rulebase security rules "${name}" destination [ ${rule.destinations.map((d) => `"${d}"`).join(" ")} ]`,
-    );
-    lines.push(
-      `set rulebase security rules "${name}" service [ ${rule.services.map((s) => `"${s}"`).join(" ")} ]`,
-    );
-    lines.push(`set rulebase security rules "${name}" application [ "any" ]`);
-    lines.push(`set rulebase security rules "${name}" action ${action}`);
-    if (rule.description)
-      lines.push(
-        `set rulebase security rules "${name}" description "${rule.description}"`,
-      );
-    if (rule.logging)
-      lines.push(`set rulebase security rules "${name}" log-end yes`);
-    if (!rule.enabled)
-      lines.push(`set rulebase security rules "${name}" disabled yes`);
-
-    return lines.join("\n");
+  /** PAN-OS service objects carry one protocol; tcp+udp services become two objects. */
+  private serviceNames(s: ResolvedService, ctx: GenContext): string[] {
+    if (s.key && s.origin !== "object") {
+      const predefined = SERVICE_CATALOG[s.key]?.names.panos;
+      if (predefined) return [predefined];
+    }
+    const portSpecs = s.specs.filter((x) => x.proto !== "icmp");
+    const protos = [...new Set(portSpecs.map((x) => x.proto))];
+    const base = this.sanitizeName(s.label.replace(/_/g, "-"));
+    return protos.map((proto) => {
+      const name = protos.length > 1 ? `${base}-${proto}` : base;
+      if (!ctx.customServices.has(name))
+        ctx.customServices.set(name, { ...s, specs: portSpecs.filter((x) => x.proto === proto) });
+      return name;
+    });
   }
 
-  generateRollback(
-    rule: NormalizedRule,
-    _zoneMappings: ZoneMapping[],
-  ): RollbackCommand {
+  protected renderObjects(ctx: GenContext): string[] {
+    const out: string[] = [];
+    for (const a of ctx.addresses.values()) {
+      const n = `set address ${quote(a.name)}`;
+      switch (a.ref.kind) {
+        case "host":
+          out.push(`${n} ip-netmask ${a.ref.ip}/32`);
+          break;
+        case "subnet":
+          out.push(`${n} ip-netmask ${a.ref.ip}/${a.ref.prefix}`);
+          break;
+        case "range":
+          out.push(`${n} ip-range ${a.ref.start}-${a.ref.end}`);
+          break;
+        case "fqdn":
+          out.push(`${n} fqdn ${a.ref.fqdn}`);
+          break;
+      }
+    }
+    for (const g of ctx.groups.values()) {
+      out.push(`set address-group ${quote(g.name)} static [ ${g.members.map(quote).join(" ")} ]`);
+    }
+    for (const [name, s] of ctx.customServices) {
+      const proto = s.specs[0]?.proto;
+      const ports = s.specs.map((x) => x.ports).join(",");
+      out.push(`set service ${quote(name)} protocol ${proto} port ${ports}`);
+    }
+    return out;
+  }
+
+  generateRollback(rule: NormalizedRule, _zoneMappings: ZoneMapping[]): RollbackCommand {
     const name = this.sanitizeName(rule.name);
     return {
       position: rule.position,
       ruleName: rule.name,
-      command: `delete rulebase security rules "${name}"`,
-      explanation: `Remove migrated rule "${name}" from Palo Alto security rulebase`,
+      command: `delete rulebase security rules ${quote(name)}`,
+      explanation: `Remove migrated rule "${name}" from the PAN-OS security rulebase`,
     };
   }
 
-  private mapZone(
-    zone: string | undefined,
-    mappings: ZoneMapping[],
-  ): string | undefined {
-    if (!zone) return undefined;
-    const mapping = mappings.find(
-      (m) => m.sourceZone.toLowerCase() === zone.toLowerCase(),
-    );
-    return mapping?.targetZone || zone;
-  }
-
   private sanitizeName(name: string): string {
-    return name.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 63);
+    return name.replace(/[^a-zA-Z0-9_.\- ]/g, "_").slice(0, NAME_MAX);
   }
 }

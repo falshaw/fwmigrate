@@ -6,29 +6,21 @@
 
 import type { FirewallVendor } from "./types";
 import type { IConfigParser } from "./ParserInterface";
+import { SUPPORTED_VENDORS } from "../vendors";
 import { CiscoASAParser } from "./CiscoASAParser";
 import { FortinetParser } from "./FortinetParser";
 import { PaloAltoParser } from "./PaloAltoParser";
 import { JuniperSRXParser } from "./JuniperSRXParser";
 import { CheckPointParser } from "./CheckPointParser";
-import { SophosParser } from "./SophosParser";
-import { SonicWallParser } from "./SonicWallParser";
-import { WatchGuardParser } from "./WatchGuardParser";
-import { PfSenseParser } from "./PfSenseParser";
-import { MikroTikParser } from "./MikroTikParser";
 
-const parsers: Record<string, new () => IConfigParser> = {
-  CISCO_ASA: CiscoASAParser,
-  CISCO_FTD: CiscoASAParser,
-  FORTINET: FortinetParser,
+// Record<FirewallVendor, …> makes the compiler reject a supported vendor
+// without a parser.
+const parsers: Record<FirewallVendor, new () => IConfigParser> = {
   PALO_ALTO: PaloAltoParser,
-  JUNIPER_SRX: JuniperSRXParser,
+  CISCO_ASA: CiscoASAParser,
   CHECKPOINT: CheckPointParser,
-  SOPHOS: SophosParser,
-  SONICWALL: SonicWallParser,
-  WATCHGUARD: WatchGuardParser,
-  PFSENSE: PfSenseParser,
-  MIKROTIK: MikroTikParser,
+  FORTINET: FortinetParser,
+  JUNIPER_SRX: JuniperSRXParser,
 };
 
 export function getParser(vendor: FirewallVendor): IConfigParser {
@@ -39,5 +31,5 @@ export function getParser(vendor: FirewallVendor): IConfigParser {
 }
 
 export function getSupportedVendors(): FirewallVendor[] {
-  return Object.keys(parsers) as FirewallVendor[];
+  return [...SUPPORTED_VENDORS];
 }

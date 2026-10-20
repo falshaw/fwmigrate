@@ -12,20 +12,9 @@ import { apiHandler } from "@/lib/apiHandler";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { z } from "zod";
+import { SUPPORTED_VENDORS } from "@/lib/vendors";
 
-const vendorEnum = z.enum([
-  "PALO_ALTO",
-  "CISCO_ASA",
-  "CISCO_FTD",
-  "CHECKPOINT",
-  "FORTINET",
-  "JUNIPER_SRX",
-  "SOPHOS",
-  "SONICWALL",
-  "WATCHGUARD",
-  "PFSENSE",
-  "MIKROTIK",
-]);
+const vendorEnum = z.enum(SUPPORTED_VENDORS);
 
 const batchConfigSchema = z.object({
   filename: z.string().min(1).max(255),

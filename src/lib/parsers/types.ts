@@ -6,18 +6,8 @@
  * Normalized types for cross-vendor rule representation
  */
 
-export type FirewallVendor =
-  | "PALO_ALTO"
-  | "CISCO_ASA"
-  | "CISCO_FTD"
-  | "CHECKPOINT"
-  | "FORTINET"
-  | "JUNIPER_SRX"
-  | "SOPHOS"
-  | "SONICWALL"
-  | "WATCHGUARD"
-  | "PFSENSE"
-  | "MIKROTIK";
+import type { FirewallVendor } from "../vendors";
+export type { FirewallVendor };
 
 export interface NormalizedRule {
   name: string;

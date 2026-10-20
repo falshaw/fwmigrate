@@ -22,17 +22,12 @@ enum Role {
 }
 
 enum FirewallVendor {
+  // Keep in sync with SUPPORTED_VENDORS in src/lib/vendors.ts (enforced by tests/vendors.test.ts)
   PALO_ALTO
   CISCO_ASA
-  CISCO_FTD
   CHECKPOINT
   FORTINET
   JUNIPER_SRX
-  SOPHOS
-  SONICWALL
-  WATCHGUARD
-  PFSENSE
-  MIKROTIK
 }
 
 enum BatchStatus {

@@ -104,19 +104,23 @@ describe("CheckPointParser", () => {
       expect(rule.destinations).toContain("web-servers");
     });
 
-    it("should resolve host objects to IP/32 in source", () => {
+    it("should keep host object names in rule sources (value lives in the object)", () => {
       // Rule 4 (Allow-DMZ-to-DB) source is web-servers group
       // Rule 5 (Allow-MGMT-SSH) source is mgmt-host
       const mgmtRule = result.rules.find((r) => r.name === "Allow-MGMT-SSH");
       expect(mgmtRule).toBeDefined();
-      expect(mgmtRule!.sources).toContain("192.0.2.100/32");
+      expect(mgmtRule!.sources).toContain("mgmt-host");
+      const obj = result.objects.find((o) => o.name === "mgmt-host");
+      expect(obj!.members).toContain("192.0.2.100/32");
     });
 
-    it("should resolve network objects to CIDR", () => {
+    it("should keep network object names in rule sources", () => {
       // Rule 2 source is internal-net -> 192.0.2.0/24
       const lanRule = result.rules.find((r) => r.name === "Allow-LAN-Web-Out");
       expect(lanRule).toBeDefined();
-      expect(lanRule!.sources).toContain("192.0.2.0/24");
+      expect(lanRule!.sources).toContain("internal-net");
+      const obj = result.objects.find((o) => o.name === "internal-net");
+      expect(obj!.members).toContain("192.0.2.0/24");
     });
 
     it("should resolve service object names", () => {
@@ -178,9 +182,10 @@ describe("CheckPointParser", () => {
     // The extractObjects method pulls from the objectsMap:
     // 5 hosts + 3 networks = 8 address objects
     // 2 groups = 2 address-group objects
-    // Total: 10
-    it("should extract 10 objects from the dictionary", () => {
-      expect(result.objects).toHaveLength(10);
+    // 5 service-tcp + 1 service-udp = 6 service objects
+    // Total: 16
+    it("should extract 16 objects from the dictionary", () => {
+      expect(result.objects).toHaveLength(16);
     });
 
     it("should classify host objects as address type", () => {
@@ -201,11 +206,13 @@ describe("CheckPointParser", () => {
       const grp = result.objects.find((o) => o.name === "web-servers");
       expect(grp).toBeDefined();
       expect(grp!.objectType).toBe("address-group");
+      expect(grp!.members).toEqual(["web-srv-01", "web-srv-02"]);
     });
 
-    it("should not include non-address object types (services, actions, tracks)", () => {
+    it("should keep service objects with their ports, but not actions or tracks", () => {
       const svcObj = result.objects.find((o) => o.name === "https");
-      expect(svcObj).toBeUndefined();
+      expect(svcObj!.objectType).toBe("service");
+      expect(svcObj!.members).toEqual(["tcp/443"]);
       const actionObj = result.objects.find((o) => o.name === "Accept");
       expect(actionObj).toBeUndefined();
       const trackObj = result.objects.find((o) => o.name === "Log");

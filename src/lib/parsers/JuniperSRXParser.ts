@@ -82,6 +82,7 @@ export class JuniperSRXParser implements IConfigParser {
         services: string[];
         action: string;
         description?: string;
+        logging: boolean;
       }
     >();
 
@@ -103,6 +104,7 @@ export class JuniperSRXParser implements IConfigParser {
           destinations: [],
           services: [],
           action: "permit",
+          logging: false,
         });
       }
       const rule = ruleData.get(key)!;
@@ -113,6 +115,8 @@ export class JuniperSRXParser implements IConfigParser {
         rule.destinations.push(rest.replace("match destination-address ", ""));
       } else if (rest.startsWith("match application ")) {
         rule.services.push(rest.replace("match application ", ""));
+      } else if (rest.startsWith("then log")) {
+        rule.logging = true;
       } else if (rest.startsWith("then ")) {
         const action = rest.replace("then ", "").split(/\s/)[0];
         rule.action =
@@ -140,7 +144,7 @@ export class JuniperSRXParser implements IConfigParser {
         sourceZone: data.srcZone,
         destinationZone: data.dstZone,
         description: data.description,
-        logging: false,
+        logging: data.logging,
       });
     }
 
@@ -186,6 +190,28 @@ export class JuniperSRXParser implements IConfigParser {
         if (!groupData.has(setMatch[1])) groupData.set(setMatch[1], []);
         groupData.get(setMatch[1])!.push(setMatch[2]);
       }
+    }
+
+    // Custom applications: set applications application <name> protocol|destination-port <v>
+    const apps = new Map<string, { protocol?: string; port?: string }>();
+    for (const line of lines) {
+      const m = line.match(
+        /^set applications application (\S+) (protocol|destination-port) (\S+)$/,
+      );
+      if (!m) continue;
+      const a = apps.get(m[1]) ?? {};
+      if (m[2] === "protocol") a.protocol = m[3];
+      else a.port = m[3];
+      apps.set(m[1], a);
+    }
+    for (const [name, a] of apps) {
+      const members =
+        a.protocol === "icmp"
+          ? ["icmp"]
+          : a.protocol && a.port
+            ? [`${a.protocol}/${a.port}`]
+            : [];
+      objects.push({ objectType: "service", name, members });
     }
 
     for (const [name, members] of addressData) {

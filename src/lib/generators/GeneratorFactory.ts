@@ -11,24 +11,15 @@ import { CiscoASAGenerator } from "./CiscoASAGenerator";
 import { FortinetGenerator } from "./FortinetGenerator";
 import { CheckPointGenerator } from "./CheckPointGenerator";
 import { JuniperSRXGenerator } from "./JuniperSRXGenerator";
-import { SophosGenerator } from "./SophosGenerator";
-import { SonicWallGenerator } from "./SonicWallGenerator";
-import { WatchGuardGenerator } from "./WatchGuardGenerator";
-import { PfSenseGenerator } from "./PfSenseGenerator";
-import { MikroTikGenerator } from "./MikroTikGenerator";
 
-const generators: Record<string, new () => IConfigGenerator> = {
+// Record<FirewallVendor, …> makes the compiler reject a supported vendor
+// without a generator.
+const generators: Record<FirewallVendor, new () => IConfigGenerator> = {
   PALO_ALTO: PaloAltoGenerator,
   CISCO_ASA: CiscoASAGenerator,
-  CISCO_FTD: CiscoASAGenerator,
-  FORTINET: FortinetGenerator,
   CHECKPOINT: CheckPointGenerator,
+  FORTINET: FortinetGenerator,
   JUNIPER_SRX: JuniperSRXGenerator,
-  SOPHOS: SophosGenerator,
-  SONICWALL: SonicWallGenerator,
-  WATCHGUARD: WatchGuardGenerator,
-  PFSENSE: PfSenseGenerator,
-  MIKROTIK: MikroTikGenerator,
 };
 
 export function getGenerator(vendor: FirewallVendor): IConfigGenerator {

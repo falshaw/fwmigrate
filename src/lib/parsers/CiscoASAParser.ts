@@ -81,8 +81,19 @@ export class CiscoASAParser implements IConfigParser {
     log: ParseLogEntry[],
   ): NormalizedObject[] {
     const objects: NormalizedObject[] = [];
-    let currentObj: { name: string; type: string; members: string[] } | null =
-      null;
+    let currentObj: {
+      name: string;
+      type: string;
+      members: string[];
+      protocol?: string;
+    } | null = null;
+    const flush = (o: NonNullable<typeof currentObj>) =>
+      objects.push({
+        objectType: o.type as NormalizedObject["objectType"],
+        name: o.name,
+        members: o.members,
+        ...(o.protocol ? { rawVendorData: { protocol: o.protocol } } : {}),
+      });
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -91,12 +102,16 @@ export class CiscoASAParser implements IConfigParser {
       const netObjMatch = line.match(/^object network (\S+)/);
       if (netObjMatch) {
         if (currentObj)
-          objects.push({
-            objectType: currentObj.type as NormalizedObject["objectType"],
-            name: currentObj.name,
-            members: currentObj.members,
-          });
+          flush(currentObj);
         currentObj = { name: netObjMatch[1], type: "address", members: [] };
+        continue;
+      }
+
+      // object service <name>
+      const svcObjHdr = line.match(/^object service (\S+)/);
+      if (svcObjHdr) {
+        if (currentObj) flush(currentObj);
+        currentObj = { name: svcObjHdr[1], type: "service", members: [] };
         continue;
       }
 
@@ -104,11 +119,7 @@ export class CiscoASAParser implements IConfigParser {
       const netGrpMatch = line.match(/^object-group network (\S+)/);
       if (netGrpMatch) {
         if (currentObj)
-          objects.push({
-            objectType: currentObj.type as NormalizedObject["objectType"],
-            name: currentObj.name,
-            members: currentObj.members,
-          });
+          flush(currentObj);
         currentObj = {
           name: netGrpMatch[1],
           type: "address-group",
@@ -118,18 +129,15 @@ export class CiscoASAParser implements IConfigParser {
       }
 
       // object-group service <name>
-      const svcGrpMatch = line.match(/^object-group service (\S+)/);
+      const svcGrpMatch = line.match(/^object-group service (\S+)(?:\s+(tcp|udp|tcp-udp))?/);
       if (svcGrpMatch) {
         if (currentObj)
-          objects.push({
-            objectType: currentObj.type as NormalizedObject["objectType"],
-            name: currentObj.name,
-            members: currentObj.members,
-          });
+          flush(currentObj);
         currentObj = {
           name: svcGrpMatch[1],
           type: "service-group",
           members: [],
+          protocol: svcGrpMatch[2],
         };
         continue;
       }
@@ -172,6 +180,19 @@ export class CiscoASAParser implements IConfigParser {
           continue;
         }
 
+        // service-object <proto> [destination] eq|range ... / service <proto> destination ...
+        const svcObjMatch = line.match(
+          /^\s*(?:service-object|service)\s+(tcp|udp|icmp|tcp-udp)(?:\s+destination)?(?:\s+(eq|range)\s+(\S+)(?:\s+(\S+))?)?/,
+        );
+        if (svcObjMatch) {
+          const [, proto, op, a, b] = svcObjMatch;
+          const port = op === "range" ? `${a}-${b}` : a;
+          const protos = proto === "tcp-udp" ? ["tcp", "udp"] : [proto];
+          for (const p of protos)
+            currentObj.members.push(p === "icmp" ? "icmp" : port ? `${p}/${port}` : p);
+          continue;
+        }
+
         // port-object eq <port>
         const portObjMatch = line.match(/^\s*port-object eq (\S+)/);
         if (portObjMatch) {
@@ -188,22 +209,14 @@ export class CiscoASAParser implements IConfigParser {
 
         // End of object block
         if (line && !line.startsWith(" ") && !line.startsWith("!")) {
-          objects.push({
-            objectType: currentObj.type as NormalizedObject["objectType"],
-            name: currentObj.name,
-            members: currentObj.members,
-          });
+          flush(currentObj);
           currentObj = null;
         }
       }
     }
 
     if (currentObj)
-      objects.push({
-        objectType: currentObj.type as NormalizedObject["objectType"],
-        name: currentObj.name,
-        members: currentObj.members,
-      });
+      flush(currentObj);
 
     log.push({ level: "info", message: `Parsed ${objects.length} objects` });
     return objects;
@@ -216,6 +229,13 @@ export class CiscoASAParser implements IConfigParser {
   ): NormalizedRule[] {
     const rules: NormalizedRule[] = [];
     let position = 0;
+
+    // access-group <acl> in interface <nameif>  -> ingress zone of the ACL
+    const aclIface = new Map<string, string>();
+    for (const l of lines) {
+      const g = l.trim().match(/^access-group\s+(\S+)\s+in\s+interface\s+(\S+)/);
+      if (g) aclIface.set(g[1], g[2]);
+    }
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -236,15 +256,29 @@ export class CiscoASAParser implements IConfigParser {
         continue;
       }
 
-      const [, aclName, action, protocol, rest] = aclMatch;
+      const [, aclName, action, protocolToken, restRaw] = aclMatch;
       position++;
 
-      const { src, dst, service } = this.parseACLAddresses(protocol, rest);
+      // "object-group SVC" / "object SVC" in the protocol position
+      let protocol = protocolToken;
+      let rest = restRaw;
+      let svcObject: string | undefined;
+      if (protocolToken === "object-group" || protocolToken === "object") {
+        const [name, ...tail] = restRaw.split(/\s+/);
+        svcObject = name;
+        protocol = "ip";
+        rest = tail.join(" ");
+      }
+
+      const parsed = this.parseACLAddresses(protocol, rest);
+      const { src, dst } = parsed;
+      const service = svcObject ? [svcObject] : parsed.service;
 
       rules.push({
         name: `${aclName}-${position}`,
         position,
-        enabled: true,
+        enabled: !/\sinactive(\s|$)/.test(line),
+        sourceZone: aclIface.get(aclName),
         action: action as "permit" | "deny",
         sources: src,
         destinations: dst,

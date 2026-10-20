@@ -201,9 +201,37 @@ export class FortinetParser implements IConfigParser {
       }
     }
 
+    // Custom services and service groups
+    for (const block of this.parseBlock(lines, /^config firewall service custom$/)) {
+      for (const entry of block.entries) {
+        const [name, fields] = Object.entries(entry)[0];
+        const members: string[] = [];
+        for (const proto of ["tcp", "udp"]) {
+          const range = fields[`${proto}-portrange`];
+          if (!range) continue;
+          for (const tok of range.split(/\s+/).filter(Boolean)) {
+            // "dst[:src]" — only the destination part is matched here
+            members.push(`${proto}/${tok.split(":")[0]}`);
+          }
+        }
+        if ((fields.protocol || "").toUpperCase() === "ICMP") members.push("icmp");
+        objects.push({ objectType: "service", name, members });
+      }
+    }
+    for (const block of this.parseBlock(lines, /^config firewall service group$/)) {
+      for (const entry of block.entries) {
+        const [name, fields] = Object.entries(entry)[0];
+        objects.push({
+          objectType: "service-group",
+          name,
+          members: this.splitQuoted(fields.member || ""),
+        });
+      }
+    }
+
     log.push({
       level: "info",
-      message: `Parsed ${objects.length} address objects`,
+      message: `Parsed ${objects.length} address and service objects`,
     });
     return objects;
   }
