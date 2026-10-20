@@ -16,6 +16,7 @@ import {
   FileUp,
   Files,
 } from "lucide-react";
+import { VENDOR_LIST } from "@/lib/vendors";
 
 interface BatchConfig {
   filename: string;
@@ -44,43 +45,34 @@ interface BatchResult {
   ruleCount?: number;
 }
 
-const vendorOptions = [
-  { value: "PALO_ALTO", label: "Palo Alto" },
-  { value: "CISCO_ASA", label: "Cisco ASA" },
-  { value: "CISCO_FTD", label: "Cisco FTD" },
-  { value: "CHECKPOINT", label: "Check Point" },
-  { value: "FORTINET", label: "Fortinet" },
-  { value: "JUNIPER_SRX", label: "Juniper SRX" },
-  { value: "SOPHOS", label: "Sophos" },
-  { value: "SONICWALL", label: "SonicWall" },
-  { value: "WATCHGUARD", label: "WatchGuard" },
-  { value: "PFSENSE", label: "pfSense" },
-  { value: "MIKROTIK", label: "MikroTik" },
-];
+const vendorOptions = VENDOR_LIST.map((v) => ({ value: v.id, label: v.label }));
 
 const vendorLabels: Record<string, string> = Object.fromEntries(
   vendorOptions.map((v) => [v.value, v.label]),
 );
 
 function detectVendor(content: string): string {
-  const lower = content.toLowerCase();
+  const trimmed = content.trim();
+  const lower = trimmed.toLowerCase();
   if (lower.includes("config firewall policy") || lower.includes("set srcintf"))
     return "FORTINET";
   if (
-    lower.includes("rulebase security rules") ||
-    lower.includes("set network")
+    lower.startsWith("<") ||
+    lower.includes("rulebase security rules")
   )
     return "PALO_ALTO";
   if (lower.includes("access-list") && lower.includes("extended"))
     return "CISCO_ASA";
-  if (lower.includes("mgmt_cli")) return "CHECKPOINT";
+  if (
+    lower.startsWith("{") &&
+    (lower.includes('"objects-dictionary"') || lower.includes('"rulebase"'))
+  )
+    return "CHECKPOINT";
   if (
     lower.includes("security policies from-zone") ||
     lower.includes("security-zone")
   )
     return "JUNIPER_SRX";
-  if (lower.includes("/ip firewall filter")) return "MIKROTIK";
-  if (lower.includes("<filterrule")) return "PFSENSE";
   return "PALO_ALTO";
 }
 

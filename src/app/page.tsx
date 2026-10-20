@@ -1,12 +1,5 @@
 import Link from "next/link";
-
-const vendors = [
-  { name: "Palo Alto", icon: "🔥" },
-  { name: "Cisco ASA", icon: "🌐" },
-  { name: "Fortinet", icon: "🛡️" },
-  { name: "Check Point", icon: "✅" },
-  { name: "Juniper SRX", icon: "🌿" },
-];
+import { VENDOR_LIST } from "@/lib/vendors";
 
 const steps = [
   {
@@ -17,17 +10,17 @@ const steps = [
   {
     num: "02",
     title: "Analyze",
-    desc: "AI detects shadows, conflicts, and overly-permissive rules",
+    desc: "Flags shadowed, unused, disabled and overly permissive rules",
   },
   {
     num: "03",
     title: "Translate",
-    desc: "Automated translation to target vendor syntax",
+    desc: "Deterministic translation to target vendor syntax, with review flags",
   },
   {
     num: "04",
     title: "Review",
-    desc: "Approve each rule with AI explanations",
+    desc: "Approve, modify or skip each rule (optional AI explanations)",
   },
   {
     num: "05",
@@ -69,27 +62,26 @@ export default function LandingPage() {
           </span>
         </h1>
         <p className="text-xl text-gray-400 max-w-2xl mx-auto mb-10">
-          Paste your source config. Get a fully translated target config with
-          analysis, explanations, and a migration plan.
+          Paste your source config. Get a target config to review rule by rule,
+          an analysis of the rule base and a migration plan.
         </p>
         <Link
           href="/register"
           className="btn-brand text-lg px-8 py-3 inline-block"
         >
-          Start Free Migration
+          Start a migration
         </Link>
       </section>
 
       {/* Vendor bar */}
       <section className="max-w-4xl mx-auto px-8 pb-16">
         <div className="flex justify-center gap-6 flex-wrap">
-          {vendors.map((v) => (
+          {VENDOR_LIST.map((v) => (
             <div
-              key={v.name}
+              key={v.id}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10"
             >
-              <span>{v.icon}</span>
-              <span className="text-sm text-gray-300">{v.name}</span>
+              <span className="text-sm text-gray-300">{v.label}</span>
             </div>
           ))}
         </div>

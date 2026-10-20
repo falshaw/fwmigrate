@@ -14,20 +14,9 @@ import {
   History,
   Info,
 } from "lucide-react";
+import { VENDOR_LIST } from "@/lib/vendors";
 
-const vendorOptions = [
-  { value: "PALO_ALTO", label: "Palo Alto" },
-  { value: "CISCO_ASA", label: "Cisco ASA" },
-  { value: "CISCO_FTD", label: "Cisco FTD" },
-  { value: "CHECKPOINT", label: "Check Point" },
-  { value: "FORTINET", label: "Fortinet" },
-  { value: "JUNIPER_SRX", label: "Juniper SRX" },
-  { value: "SOPHOS", label: "Sophos" },
-  { value: "SONICWALL", label: "SonicWall" },
-  { value: "WATCHGUARD", label: "WatchGuard" },
-  { value: "PFSENSE", label: "pfSense" },
-  { value: "MIKROTIK", label: "MikroTik" },
-];
+const vendorOptions = VENDOR_LIST.map((v) => ({ value: v.id, label: v.label }));
 
 const vendorLabels: Record<string, string> = Object.fromEntries(
   vendorOptions.map((v) => [v.value, v.label]),

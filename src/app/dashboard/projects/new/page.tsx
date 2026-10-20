@@ -2,20 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { VENDOR_LIST } from "@/lib/vendors";
 
-const vendors = [
-  { value: "PALO_ALTO", label: "Palo Alto Networks" },
-  { value: "CISCO_ASA", label: "Cisco ASA" },
-  { value: "CISCO_FTD", label: "Cisco FTD" },
-  { value: "CHECKPOINT", label: "Check Point" },
-  { value: "FORTINET", label: "Fortinet" },
-  { value: "JUNIPER_SRX", label: "Juniper SRX" },
-  { value: "SOPHOS", label: "Sophos XG/SFOS" },
-  { value: "SONICWALL", label: "SonicWall" },
-  { value: "WATCHGUARD", label: "WatchGuard Firebox" },
-  { value: "PFSENSE", label: "pfSense" },
-  { value: "MIKROTIK", label: "MikroTik RouterOS" },
-];
+const vendors = VENDOR_LIST.map((v) => ({ value: v.id, label: v.label }));
 
 export default function NewProjectPage() {
   const router = useRouter();

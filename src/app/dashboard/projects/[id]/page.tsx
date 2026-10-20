@@ -11,6 +11,7 @@ import {
   XCircle,
   AlertTriangle,
 } from "lucide-react";
+import { VENDOR_LIST } from "@/lib/vendors";
 
 interface Project {
   id: string;
@@ -53,19 +54,9 @@ interface ChangeManagerResult {
   }>;
 }
 
-const vendorLabels: Record<string, string> = {
-  PALO_ALTO: "Palo Alto",
-  CISCO_ASA: "Cisco ASA",
-  CISCO_FTD: "Cisco FTD",
-  CHECKPOINT: "Check Point",
-  FORTINET: "Fortinet",
-  JUNIPER_SRX: "Juniper SRX",
-  SOPHOS: "Sophos XG/SFOS",
-  SONICWALL: "SonicWall",
-  WATCHGUARD: "WatchGuard",
-  PFSENSE: "pfSense",
-  MIKROTIK: "MikroTik",
-};
+const vendorLabels: Record<string, string> = Object.fromEntries(
+  VENDOR_LIST.map((v) => [v.id, v.label]),
+);
 
 const workflowSteps = [
   { key: "import", label: "Import", statuses: ["CREATED"] },
