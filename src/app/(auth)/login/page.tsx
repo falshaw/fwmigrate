@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRightLeft, Check, CircleAlert, Search, Mail, Lock } from "lucide-react";
 import { AppBackground, LogoMark } from "@/components/AppBackground";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { safeCallbackPath } from "@/lib/ui/safe-redirect";
 
 const FEATURES = [
   {
@@ -56,7 +57,7 @@ export default function LoginPage() {
       setError("Invalid email or password");
       setLoading(false);
     } else {
-      router.push("/dashboard");
+      router.push(safeCallbackPath(new URLSearchParams(window.location.search).get("callbackUrl")));
     }
   }
 
