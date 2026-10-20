@@ -285,10 +285,15 @@ model TranslatedRule {
   targetConfig String
   targetVendor FirewallVendor
 
-  // AI explanation
+  // Deterministic translation note from the generator
   explanation String
   warnings    Json?
   confidence  Float
+
+  // Optional LLM explanation, kept apart from the deterministic note
+  aiExplanation String?
+  aiModel       String?
+  aiExplainedAt DateTime?
 
   // Review
   reviewStatus   RuleReviewStatus @default(PENDING)

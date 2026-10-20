@@ -17,6 +17,7 @@ import { Prisma } from "@/generated/prisma";
 import { logger } from "@/lib/logger";
 import type { FirewallVendor, NormalizedRule } from "@/lib/parsers/types";
 import { explainWithLlm } from "./TranslationAI";
+import { llmModel, llmProvider } from "./OllamaClient";
 
 export interface ExplainItem {
   translatedRuleId: string;
@@ -107,8 +108,12 @@ export function startExplainJob(
         const warnings = [...item.reviewFlags, ...ai.warnings.map((w) => `AI: ${w}`)];
         await prisma.translatedRule.update({
           where: { id: item.translatedRuleId },
+          // The generator's deterministic note stays in `explanation`;
+          // the LLM text is stored apart and labelled with its model in the UI.
           data: {
-            explanation: ai.explanation,
+            aiExplanation: ai.explanation,
+            aiModel: `${llmProvider()} · ${llmModel()}`,
+            aiExplainedAt: new Date(),
             warnings: warnings.length ? warnings : Prisma.JsonNull,
           },
         });
