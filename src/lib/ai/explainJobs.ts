@@ -45,7 +45,7 @@ const intEnv = (name: string, def: number, min: number, max: number) =>
 export function explainLimits() {
   return {
     maxRules: intEnv("LLM_EXPLAIN_MAX_RULES", 50, 0, 1000),
-    concurrency: intEnv("LLM_CONCURRENCY", 2, 1, 8),
+    concurrency: intEnv("LLM_CONCURRENCY", 1, 1, 8),
   };
 }
 

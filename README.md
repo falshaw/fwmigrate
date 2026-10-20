@@ -164,7 +164,7 @@ npm run dev               # http://localhost:3004
 | `SEED_ADMIN_PASSWORD` | no | Seed admin password (random if unset) |
 | `LLM_PROVIDER` | no | `none` (default), `ollama` or `claude` |
 | `OLLAMA_HOST` / `OLLAMA_MODEL` | no | Default `http://host.docker.internal:11434` / `qwen2.5:14b` |
-| `LLM_TIMEOUT_MS` / `LLM_CONCURRENCY` / `LLM_EXPLAIN_MAX_RULES` | no | Per-call timeout (90000), parallel calls (2), rules explained per run (50) |
+| `LLM_TIMEOUT_MS` / `LLM_CONCURRENCY` / `LLM_EXPLAIN_MAX_RULES` | no | Per-call timeout (90000), parallel calls (1; a local Ollama usually serves one request at a time, extra calls only queue and time out), rules explained per run (50) |
 | `CLAUDE_BRIDGE_URL` / `CLAUDE_BRIDGE_TOKEN` / `CLAUDE_MODEL` | no | LLM gateway URL, shared token, model alias |
 | `CHANGE_MANAGER_API_URL` / `CHANGE_MANAGER_API_KEY` | no | External change-management system and its bearer token |
 | `ENCRYPTION_KEY` | no | 64 hex chars, used by `src/lib/crypto.ts` |

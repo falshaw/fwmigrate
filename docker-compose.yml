@@ -128,7 +128,7 @@ services:
       # Optional LLM: "none" (default), "ollama" or "claude" (HTTP gateway)
       - LLM_PROVIDER=${LLM_PROVIDER:-none}
       - LLM_TIMEOUT_MS=${LLM_TIMEOUT_MS:-90000}
-      - LLM_CONCURRENCY=${LLM_CONCURRENCY:-2}
+      - LLM_CONCURRENCY=${LLM_CONCURRENCY:-1}
       - LLM_EXPLAIN_MAX_RULES=${LLM_EXPLAIN_MAX_RULES:-50}
       - CLAUDE_BRIDGE_URL=${CLAUDE_BRIDGE_URL:-http://host.docker.internal:7777}
       - CLAUDE_MODEL=${CLAUDE_MODEL:-sonnet}
