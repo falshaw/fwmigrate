@@ -9,8 +9,35 @@ import { logger } from "../logger";
 const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://localhost:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen2.5:14b";
 
-// LLM provider switch — "ollama" (default) or "claude" (host bridge).
-const LLM_PROVIDER = (process.env.LLM_PROVIDER || "ollama").toLowerCase();
+// LLM provider switch — "none" (default: no LLM), "ollama" or "claude"
+// (authenticated HTTP gateway). Translation never depends on the LLM.
+const LLM_PROVIDER = (process.env.LLM_PROVIDER || "none").toLowerCase();
+const LLM_TIMEOUT_MS = Math.max(
+  1000,
+  parseInt(process.env.LLM_TIMEOUT_MS || "90000", 10) || 90000,
+);
+
+export class LlmDisabledError extends Error {
+  constructor() {
+    super("No LLM configured (LLM_PROVIDER=none)");
+    this.name = "LlmDisabledError";
+  }
+}
+
+export function isLlmEnabled(): boolean {
+  return LLM_PROVIDER === "ollama" || LLM_PROVIDER === "claude";
+}
+
+export function llmProvider(): string {
+  return isLlmEnabled() ? LLM_PROVIDER : "none";
+}
+
+function isTimeout(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "TimeoutError" || error.name === "AbortError")
+  );
+}
 const CLAUDE_BRIDGE_URL =
   process.env.CLAUDE_BRIDGE_URL || "http://host.docker.internal:7777";
 const CLAUDE_MODEL = (process.env.CLAUDE_MODEL || "opus").toLowerCase();
@@ -26,7 +53,10 @@ async function generateViaClaudeBridge(prompt: string): Promise<string> {
         : {}),
     },
     body: JSON.stringify({ prompt, model: CLAUDE_MODEL }),
-    signal: AbortSignal.timeout(130_000),
+    signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+  }).catch((error: unknown) => {
+    recordFailure();
+    throw error;
   });
   if (!res.ok) {
     let detail = `${res.status} ${res.statusText}`;
@@ -90,8 +120,9 @@ export interface OllamaResponse {
 
 export async function ollamaGenerate(
   prompt: string,
-  options?: { model?: string; temperature?: number },
+  options?: { model?: string; temperature?: number; json?: boolean },
 ): Promise<string> {
+  if (!isLlmEnabled()) throw new LlmDisabledError();
   if (isCircuitOpen()) {
     throw new Error(
       "AI service temporarily unavailable (circuit breaker open)",
@@ -116,8 +147,11 @@ export async function ollamaGenerate(
           model,
           prompt,
           stream: false,
+          ...(options?.json ? { format: "json" } : {}),
           options: { temperature: options?.temperature ?? 0.3 },
         }),
+        // Bounded: a slow or wedged model must never hold a request open
+        signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
       });
 
       // Do not retry on 4xx errors (bad model name, etc.)
@@ -140,6 +174,12 @@ export async function ollamaGenerate(
       return data.response;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
+
+      // A timeout is a failure but not worth retrying (the model is busy)
+      if (isTimeout(error)) {
+        recordFailure();
+        throw new Error(`LLM call timed out after ${LLM_TIMEOUT_MS} ms`);
+      }
 
       const isConnectionError =
         message.includes("ECONNREFUSED") ||
@@ -165,6 +205,7 @@ export async function ollamaGenerate(
 }
 
 export async function ollamaHealth(): Promise<boolean> {
+  if (LLM_PROVIDER !== "ollama") return false;
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);

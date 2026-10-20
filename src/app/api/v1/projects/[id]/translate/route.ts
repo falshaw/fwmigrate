@@ -5,72 +5,88 @@
  */
 
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { apiHandler } from "@/lib/apiHandler";
 import prisma from "@/lib/prisma";
 import { notFound, badRequest } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { getGenerator } from "@/lib/generators/GeneratorFactory";
-import { explainTranslation } from "@/lib/ai/TranslationAI";
 import { Prisma } from "@/generated/prisma";
 import { toNormalizedRules } from "@/lib/mappers/ruleMapper";
-import type {
-  FirewallVendor,
-  NormalizedRule,
-  NormalizedObject,
-} from "@/lib/parsers/types";
+import { isLlmEnabled, llmProvider } from "@/lib/ai/OllamaClient";
+import {
+  cancelExplainJob,
+  explainLimits,
+  getExplainJob,
+  startExplainJob,
+  type ExplainItem,
+} from "@/lib/ai/explainJobs";
+import type { FirewallVendor, NormalizedObject } from "@/lib/parsers/types";
 import type { ZoneMapping } from "@/lib/generators/GeneratorInterface";
+
+const translateSchema = z
+  .object({
+    /** Queue LLM explanations after the translation (default: when an LLM is configured) */
+    explain: z.boolean().optional(),
+  })
+  .optional();
+
+type TranslateInput = z.infer<typeof translateSchema>;
+
+async function loadProject(id: string, organizationId: string) {
+  const project = await prisma.migrationProject.findUnique({
+    where: { id },
+    include: {
+      normalizedRules: { orderBy: { position: "asc" } },
+      normalizedObjects: true,
+      zoneMappings: true,
+    },
+  });
+  if (!project || project.organizationId !== organizationId) return null;
+  return project;
+}
 
 /**
  * POST /api/v1/projects/[id]/translate
- * Translate all normalized rules to the target vendor format.
- * Uses the appropriate generator for config output and AI for explanations.
- * Creates TranslatedRule records for each normalized rule.
+ * Deterministic translation of every normalised rule with the target
+ * generator. Returns as soon as the rules are stored. When an LLM is
+ * configured (and `explain` is not false) per-rule explanations are queued
+ * as a bounded background job; poll GET for its progress.
  */
 export const POST = apiHandler(
-  async ({ params, organizationId }) => {
-    const project = await prisma.migrationProject.findUnique({
-      where: { id: params.id },
-      include: {
-        normalizedRules: { orderBy: { position: "asc" } },
-        normalizedObjects: true,
-        zoneMappings: true,
-      },
-    });
-
-    if (!project) return notFound("Project not found");
-    if (project.organizationId !== organizationId)
-      return notFound("Project not found");
-
-    if (project.normalizedRules.length === 0) {
-      return badRequest(
-        "No parsed rules to translate. Parse a configuration first.",
-      );
+  async ({ params, organizationId, req }) => {
+    // Body is optional (the UI posts none); validate it when present
+    const rawBody = await req.text();
+    let body: TranslateInput;
+    try {
+      body = translateSchema.parse(rawBody.trim() ? JSON.parse(rawBody) : undefined);
+    } catch {
+      return badRequest('Body must be empty or {"explain": boolean}');
     }
 
+    const project = await loadProject(params.id, organizationId);
+    if (!project) return notFound("Project not found");
+
+    if (project.normalizedRules.length === 0) {
+      return badRequest("No parsed rules to translate. Parse a configuration first.");
+    }
+
+    cancelExplainJob(params.id);
     await prisma.migrationProject.update({
       where: { id: params.id },
       data: { status: "TRANSLATING" },
     });
 
-    logger.translation.run("start", {
-      projectId: params.id,
-      targetVendor: project.targetVendor,
-      ruleCount: project.normalizedRules.length,
-    });
-
+    const started = Date.now();
     const sourceVendor = project.sourceVendor as FirewallVendor;
     const targetVendor = project.targetVendor as FirewallVendor;
     const generator = getGenerator(targetVendor);
 
-    // Build zone mappings from DB records
     const zoneMappings: ZoneMapping[] = project.zoneMappings.map((zm) => ({
       sourceZone: zm.sourceZone,
       targetZone: zm.targetZone,
     }));
-
-    // Convert Prisma records to parser types
-    const rules: NormalizedRule[] = toNormalizedRules(project.normalizedRules);
-
+    const rules = toNormalizedRules(project.normalizedRules);
     const objects: NormalizedObject[] = project.normalizedObjects.map((o) => ({
       objectType: o.objectType as NormalizedObject["objectType"],
       name: o.name,
@@ -78,109 +94,93 @@ export const POST = apiHandler(
       rawVendorData: o.rawVendorData as Record<string, unknown> | undefined,
     }));
 
-    // Generate full config using the generator
-    const generatorResult = await generator.generate(
-      rules,
-      objects,
-      zoneMappings,
-    );
+    const result = await generator.generate(rules, objects, zoneMappings);
+    const byPosition = new Map(result.ruleConfigs.map((rc) => [rc.position, rc]));
 
-    // Delete old translated rules
-    await prisma.translatedRule.deleteMany({ where: { projectId: params.id } });
-
-    // For each rule, generate individual config and AI explanation
-    let totalConfidence = 0;
-    const translatedData: Array<Prisma.TranslatedRuleUncheckedCreateInput> = [];
-
-    // Pre-compute per-rule configs (CPU-only, no I/O)
-    const ruleWorkItems = project.normalizedRules
-      .map((normalizedRule) => {
-        const rule = rules.find((r) => r.position === normalizedRule.position);
-        if (!rule) return null;
-
-        const ruleConfig = generatorResult.ruleConfigs.find(
-          (rc) => rc.position === rule.position,
-        );
-        const targetConfig =
-          ruleConfig?.config ?? generator.generateRule(rule, zoneMappings);
-
-        return { normalizedRule, rule, targetConfig };
-      })
-      .filter((item): item is NonNullable<typeof item> => item !== null);
-
-    // Process Ollama AI explanations in concurrent batches of 5
-    // Ollama is single-threaded so unlimited parallelism would just queue;
-    // batches of 5 balance throughput with resource usage.
-    const OLLAMA_BATCH_SIZE = 5;
-
-    for (let i = 0; i < ruleWorkItems.length; i += OLLAMA_BATCH_SIZE) {
-      const batch = ruleWorkItems.slice(i, i + OLLAMA_BATCH_SIZE);
-
-      const batchResults = await Promise.allSettled(
-        batch.map(async ({ normalizedRule, rule, targetConfig }) => {
-          const aiResult = await explainTranslation(
-            rule,
-            targetConfig,
-            sourceVendor,
-            targetVendor,
-          );
-
-          return {
-            projectId: params.id,
-            normalizedRuleId: normalizedRule.id,
-            targetConfig,
-            targetVendor: project.targetVendor,
-            explanation: aiResult.explanation,
-            warnings: aiResult.warnings?.length
-              ? aiResult.warnings
-              : Prisma.JsonNull,
-            confidence: aiResult.confidence,
-          } satisfies Prisma.TranslatedRuleUncheckedCreateInput;
-        }),
-      );
-
-      for (const result of batchResults) {
-        if (result.status === "fulfilled") {
-          totalConfidence += result.value.confidence;
-          translatedData.push(result.value);
-        } else {
-          logger.warn("Rule translation failed, skipping rule in batch", {
-            projectId: params.id,
-            batchIndex: i,
-            error:
-              result.reason instanceof Error
-                ? result.reason.message
-                : String(result.reason),
-          });
-        }
-      }
-    }
-
-    // Batch insert all translated rules in a single DB query
-    if (translatedData.length > 0) {
-      await prisma.translatedRule.createMany({ data: translatedData });
-    }
-
-    const translatedCount = translatedData.length;
-    const averageConfidence =
-      translatedCount > 0 ? totalConfidence / translatedCount : 0;
-
-    // Update project status
-    await prisma.migrationProject.update({
-      where: { id: params.id },
-      data: { status: "TRANSLATED" },
+    const data: Prisma.TranslatedRuleCreateManyInput[] = project.normalizedRules.map((nr) => {
+      const rc = byPosition.get(nr.position)!;
+      return {
+        projectId: params.id,
+        normalizedRuleId: nr.id,
+        targetConfig: rc.config,
+        targetVendor: project.targetVendor,
+        explanation: rc.explanation,
+        warnings: rc.warnings.length ? rc.warnings : Prisma.JsonNull,
+        confidence: rc.confidence,
+      };
     });
+
+    await prisma.$transaction([
+      prisma.translatedRule.deleteMany({ where: { projectId: params.id } }),
+      prisma.translatedRule.createMany({ data }),
+      prisma.migrationProject.update({
+        where: { id: params.id },
+        data: { status: "TRANSLATED" },
+      }),
+    ]);
+
+    const translatedCount = data.length;
+    const averageConfidence =
+      Math.round((result.ruleConfigs.reduce((s, r) => s + r.confidence, 0) / translatedCount) * 100) / 100;
+    const reviewFlags = result.ruleConfigs.filter((r) => r.warnings.some((w) => w.startsWith("REVIEW:"))).length;
+
+    // Optional, bounded, after the response
+    let explain: Record<string, unknown> = { status: "disabled", provider: "none" };
+    const wantExplain = body?.explain ?? true;
+    if (isLlmEnabled() && wantExplain && explainLimits().maxRules > 0) {
+      const stored = await prisma.translatedRule.findMany({
+        where: { projectId: params.id },
+        select: { id: true, normalizedRule: { select: { position: true } } },
+      });
+      const idByPosition = new Map(stored.map((s) => [s.normalizedRule.position, s.id]));
+      const items: ExplainItem[] = rules.map((rule) => {
+        const rc = byPosition.get(rule.position)!;
+        return {
+          translatedRuleId: idByPosition.get(rule.position)!,
+          rule,
+          targetConfig: rc.config,
+          reviewFlags: rc.warnings,
+        };
+      });
+      explain = { ...startExplainJob(params.id, items, sourceVendor, targetVendor), provider: llmProvider() };
+    } else if (isLlmEnabled()) {
+      explain = { status: "not-requested", provider: llmProvider() };
+    }
 
     logger.translation.run("success", {
       projectId: params.id,
       translatedCount,
-      averageConfidence: Math.round(averageConfidence * 100) / 100,
+      averageConfidence,
+      durationMs: Date.now() - started,
     });
 
     return NextResponse.json({
       translatedCount,
-      averageConfidence: Math.round(averageConfidence * 100) / 100,
+      averageConfidence,
+      rulesWithReviewFlags: reviewFlags,
+      durationMs: Date.now() - started,
+      explain,
     });
   },
-  { rateLimit: { interval: 60_000, limit: 5 }, rateLimitPrefix: "translate" },
+  {
+    rateLimit: { interval: 60_000, limit: 10 },
+    rateLimitPrefix: "translate",
+  },
 );
+
+/**
+ * GET /api/v1/projects/[id]/translate
+ * Progress of the optional LLM explanation job.
+ */
+export const GET = apiHandler(async ({ params, organizationId }) => {
+  const project = await prisma.migrationProject.findUnique({
+    where: { id: params.id },
+    select: { organizationId: true, status: true },
+  });
+  if (!project || project.organizationId !== organizationId) return notFound("Project not found");
+  return NextResponse.json({
+    projectStatus: project.status,
+    llm: { enabled: isLlmEnabled(), provider: llmProvider() },
+    explain: getExplainJob(params.id) ?? { status: isLlmEnabled() ? "idle" : "disabled" },
+  });
+});
