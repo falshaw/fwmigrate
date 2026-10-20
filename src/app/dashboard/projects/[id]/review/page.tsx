@@ -34,6 +34,8 @@ interface NormalizedRuleWithTranslation {
     id: string;
     targetConfig: string;
     explanation: string;
+    aiExplanation?: string | null;
+    aiModel?: string | null;
     warnings?: string[] | null;
     confidence: number;
     reviewStatus: string;
@@ -282,7 +284,8 @@ function RuleDetail({
   const t = rule.translatedRule;
   const warnings = t.warnings ?? [];
   const review = warnings.filter((w) => w.startsWith("REVIEW:"));
-  const notes = warnings.filter((w) => !w.startsWith("REVIEW:"));
+  const notes = warnings.filter((w) => !w.startsWith("REVIEW:") && !w.startsWith("AI:"));
+  const aiNotes = warnings.filter((w) => w.startsWith("AI:")).map((w) => w.replace(/^AI:\s*/, ""));
   const state = ruleState({
     isOverlyPermissive: rule.isOverlyPermissive,
     riskScore: rule.riskScore,
@@ -309,10 +312,13 @@ function RuleDetail({
         </div>
       </div>
 
-      {state === "risk" && rule.analysisNotes && (
-        <div className="alert alert-error">
+      {rule.analysisNotes && (
+        <div className={`alert ${state === "risk" ? "alert-error" : "alert-warn"}`}>
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-          <span>{rule.analysisNotes}</span>
+          <span>
+            <b className="mr-1">Analysis:</b>
+            {rule.analysisNotes.split(" | ").join(" · ")}
+          </span>
         </div>
       )}
 
@@ -328,14 +334,44 @@ function RuleDetail({
         <CodeBlock label={`Target · ${tgt}`} code={t.targetConfig} />
       </div>
 
-      {t.explanation && <p className="text-[13px] text-ink-65">{t.explanation}</p>}
+      {(t.explanation || notes.length > 0) && (
+        <div className="grid gap-1.5">
+          <div className="flex items-center gap-2">
+            <span className="eyebrow">Translation notes</span>
+            <span className="badge b-grey">deterministic</span>
+          </div>
+          {t.explanation && <p className="text-[13px] text-ink-65">{t.explanation}</p>}
+          {notes.length > 0 && (
+            <ul className="grid gap-1 text-xs text-ink-65">
+              {notes.map((w, i) => (
+                <li key={i}>· {w}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
-      {notes.length > 0 && (
-        <ul className="grid gap-1 text-xs text-ink-65">
-          {notes.map((w, i) => (
-            <li key={i}>· {w}</li>
-          ))}
-        </ul>
+      {(t.aiExplanation || aiNotes.length > 0) && (
+        <aside
+          className="grid gap-1.5 rounded-xl border border-dashed border-accent/40 bg-accent-soft px-4 py-3"
+          aria-label="AI explanation"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="badge b-blue">AI</span>
+            {t.aiModel && <span className="font-mono text-[11px] text-ink-65">{t.aiModel}</span>}
+            <span className="text-[11px] text-ink-45">
+              Generated text, may be wrong. It never changes the config.
+            </span>
+          </div>
+          {t.aiExplanation && <p className="text-[13px]">{t.aiExplanation}</p>}
+          {aiNotes.length > 0 && (
+            <ul className="grid gap-1 text-xs text-ink-65">
+              {aiNotes.map((w, i) => (
+                <li key={i}>· {w}</li>
+              ))}
+            </ul>
+          )}
+        </aside>
       )}
 
       {error && (
