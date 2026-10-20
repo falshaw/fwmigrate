@@ -144,7 +144,7 @@ export default function ProjectOverviewPage() {
       <div className="mb-[18px] flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
           <div className="eyebrow">
-            <Link href="/dashboard#projects" className="hover:text-ink">
+            <Link href="/dashboard/projects" className="hover:text-ink">
               Projects
             </Link>
           </div>

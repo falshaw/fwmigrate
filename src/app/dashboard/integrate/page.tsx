@@ -349,7 +349,7 @@ export default function IntegratePage() {
               No projects ready. Translate and approve rules in a project first.
             </p>
             <Link
-              href="/dashboard"
+              href="/dashboard/projects"
               className="text-xs font-semibold text-accent hover:underline mt-2 inline-flex items-center gap-1"
             >
               Go to Projects <ArrowRight className="w-3 h-3" />

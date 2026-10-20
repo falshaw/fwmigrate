@@ -38,7 +38,8 @@ export interface QueueItem {
 
 export interface OverviewData {
   projects: OverviewProject[];
-  totals: { rules: number; pending: number; risky: number };
+  /** needsReview = pending + flagged: every rule waiting for a human. */
+  totals: { rules: number; needsReview: number; risky: number };
   /** Rule reviews per day, oldest first, last 7 days including today. */
   activity: { date: string; count: number }[];
   queue: QueueItem[];
@@ -56,15 +57,9 @@ function asStrings(v: unknown): string[] {
   return Array.isArray(v) ? v.map(String) : [];
 }
 
-export async function loadOverview(organizationId: string): Promise<OverviewData> {
-  const inOrg = { project: { organizationId } };
-
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  const since = new Date(today);
-  since.setUTCDate(since.getUTCDate() - 6);
-
-  const [projects, counts, risky, reviewed, open] = await Promise.all([
+/** Every project of the organization with its review counts, newest first. */
+export async function loadProjects(organizationId: string): Promise<OverviewProject[]> {
+  const [projects, counts] = await Promise.all([
     prisma.migrationProject.findMany({
       where: { organizationId },
       orderBy: { updatedAt: "desc" },
@@ -80,9 +75,47 @@ export async function loadOverview(organizationId: string): Promise<OverviewData
     }),
     prisma.translatedRule.groupBy({
       by: ["projectId", "reviewStatus"],
-      where: inOrg,
+      where: { project: { organizationId } },
       _count: { _all: true },
     }),
+  ]);
+
+  const byProject = new Map<string, Record<string, number>>();
+  for (const c of counts) {
+    const m = byProject.get(c.projectId) ?? {};
+    m[c.reviewStatus] = c._count._all;
+    byProject.set(c.projectId, m);
+  }
+
+  return projects.map((p) => {
+    const m = byProject.get(p.id) ?? {};
+    const translated = Object.values(m).reduce((x, y) => x + y, 0);
+    return {
+      id: p.id,
+      name: p.name,
+      sourceVendor: p.sourceVendor,
+      targetVendor: p.targetVendor,
+      status: p.status,
+      ruleCount: p.ruleCount,
+      updatedAt: p.updatedAt.toISOString(),
+      translated,
+      approved: (m.APPROVED ?? 0) + (m.MODIFIED ?? 0),
+      flagged: m.FLAGGED ?? 0,
+      pending: m.PENDING ?? 0,
+    };
+  });
+}
+
+export async function loadOverview(organizationId: string): Promise<OverviewData> {
+  const inOrg = { project: { organizationId } };
+
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const since = new Date(today);
+  since.setUTCDate(since.getUTCDate() - 6);
+
+  const [overviewProjects, risky, reviewed, open] = await Promise.all([
+    loadProjects(organizationId),
     prisma.normalizedRule.count({
       where: {
         ...inOrg,
@@ -119,31 +152,6 @@ export async function loadOverview(organizationId: string): Promise<OverviewData
       },
     }),
   ]);
-
-  const byProject = new Map<string, Record<string, number>>();
-  for (const c of counts) {
-    const m = byProject.get(c.projectId) ?? {};
-    m[c.reviewStatus] = c._count._all;
-    byProject.set(c.projectId, m);
-  }
-
-  const overviewProjects: OverviewProject[] = projects.map((p) => {
-    const m = byProject.get(p.id) ?? {};
-    const translated = Object.values(m).reduce((a, b) => a + b, 0);
-    return {
-      id: p.id,
-      name: p.name,
-      sourceVendor: p.sourceVendor,
-      targetVendor: p.targetVendor,
-      status: p.status,
-      ruleCount: p.ruleCount,
-      updatedAt: p.updatedAt.toISOString(),
-      translated,
-      approved: (m.APPROVED ?? 0) + (m.MODIFIED ?? 0),
-      flagged: m.FLAGGED ?? 0,
-      pending: m.PENDING ?? 0,
-    };
-  });
 
   const perDay = new Map<string, number>();
   for (const r of reviewed) {
@@ -196,7 +204,7 @@ export async function loadOverview(organizationId: string): Promise<OverviewData
     .slice(0, QUEUE_SIZE);
 
   const pairMap = new Map<string, { source: string; target: string; projects: number }>();
-  for (const p of projects) {
+  for (const p of overviewProjects) {
     const k = `${p.sourceVendor}>${p.targetVendor}`;
     const e = pairMap.get(k) ?? { source: p.sourceVendor, target: p.targetVendor, projects: 0 };
     e.projects += 1;
@@ -206,8 +214,8 @@ export async function loadOverview(organizationId: string): Promise<OverviewData
   return {
     projects: overviewProjects,
     totals: {
-      rules: projects.reduce((s, p) => s + p.ruleCount, 0),
-      pending: overviewProjects.reduce((s, p) => s + p.pending, 0),
+      rules: overviewProjects.reduce((s, p) => s + p.ruleCount, 0),
+      needsReview: overviewProjects.reduce((s, p) => s + p.pending + p.flagged, 0),
       risky,
     },
     activity,
