@@ -3,12 +3,13 @@
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  *
- * Guess the source vendor of a pasted or uploaded config (batch import).
+ * Guess the source vendor of a pasted or uploaded config (batch and import).
  */
 
 import type { FirewallVendor } from "@/lib/vendors";
 
-export function detectVendor(content: string): FirewallVendor {
+/** The vendor whose config format this looks like, or null when nothing matches. */
+export function detectVendorStrict(content: string): FirewallVendor | null {
   const trimmed = content.trim();
   const lower = trimmed.toLowerCase();
   if (lower.includes("config firewall policy") || lower.includes("set srcintf"))
@@ -30,5 +31,10 @@ export function detectVendor(content: string): FirewallVendor {
     lower.includes("security-zone")
   )
     return "JUNIPER_SRX";
-  return "PALO_ALTO";
+  return null;
+}
+
+/** Batch import needs a vendor for every file: falls back to PAN-OS. */
+export function detectVendor(content: string): FirewallVendor {
+  return detectVendorStrict(content) ?? "PALO_ALTO";
 }
