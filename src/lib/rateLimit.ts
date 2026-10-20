@@ -86,7 +86,7 @@ export async function applyRateLimit(
   config: RateLimitConfig = RATE_LIMITS.api,
   prefix: string = "api",
 ): Promise<NextResponse | null> {
-  const { limited, remaining, resetAt } = checkRateLimit(req, config, prefix);
+  const { limited, resetAt } = checkRateLimit(req, config, prefix);
   if (limited) {
     const retryAfter = Math.ceil((resetAt - Date.now()) / 1000);
     return NextResponse.json(

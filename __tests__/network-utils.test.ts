@@ -2,9 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ipToBigInt,
   cidrToRange,
-  parseAddressToRanges,
   rangesOverlap,
-  rangeContains,
   compareAddresses,
   parseServiceToPorts,
   compareServices,

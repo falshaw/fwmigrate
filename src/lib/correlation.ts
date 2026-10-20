@@ -13,7 +13,10 @@ let AsyncLocalStorage: typeof import("async_hooks").AsyncLocalStorage | null =
 let randomUUID: typeof import("crypto").randomUUID | null = null;
 
 if (isServer) {
+  // Server-only modules, loaded lazily so this file stays importable client-side
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   AsyncLocalStorage = require("async_hooks").AsyncLocalStorage;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   randomUUID = require("crypto").randomUUID;
 }
 
