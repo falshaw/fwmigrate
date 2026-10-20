@@ -65,7 +65,7 @@ describe("RuleAnalysisEngine — analyzeRuleset", () => {
       expect(result.summary.permissive).toBe(0);
     });
 
-    it("should not flag permit with specific source as permissive", () => {
+    it("grades a specific source with any destination and any service as high, not critical", () => {
       const rules: NormalizedRule[] = [
         makeRule({
           position: 1,
@@ -78,6 +78,15 @@ describe("RuleAnalysisEngine — analyzeRuleset", () => {
       ];
 
       const result = analyzeRuleset(rules);
+      expect(result.summary.permissive).toBe(1);
+      expect(result.issues[0].severity).toBe("high");
+      expect(result.issues[0].description).toContain("every service to any destination");
+    });
+
+    it("does not flag a specific source, destination and service as permissive", () => {
+      const result = analyzeRuleset([
+        makeRule({ position: 1, name: "web", sources: ["192.0.2.10/32"], destinations: ["203.0.113.10/32"] }),
+      ]);
       expect(result.summary.permissive).toBe(0);
     });
 

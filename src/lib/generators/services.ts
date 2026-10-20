@@ -92,6 +92,21 @@ export const SERVICE_CATALOG: Record<string, CatalogEntry> = {
     specs: [{ proto: "tcp", ports: "25" }],
     names: { fortinet: "SMTP", junos: "junos-smtp", checkpoint: "smtp", panos: null },
   },
+  smtps: {
+    key: "smtps",
+    specs: [{ proto: "tcp", ports: "465" }],
+    names: { fortinet: "SMTPS", junos: null, checkpoint: null, panos: null },
+  },
+  imaps: {
+    key: "imaps",
+    specs: [{ proto: "tcp", ports: "993" }],
+    names: { fortinet: "IMAPS", junos: null, checkpoint: null, panos: null },
+  },
+  pop3s: {
+    key: "pop3s",
+    specs: [{ proto: "tcp", ports: "995" }],
+    names: { fortinet: "POP3S", junos: null, checkpoint: null, panos: null },
+  },
   pop3: {
     key: "pop3",
     specs: [{ proto: "tcp", ports: "110" }],
