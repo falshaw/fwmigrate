@@ -9,13 +9,14 @@ import { apiHandler } from "@/lib/apiHandler";
 import prisma from "@/lib/prisma";
 import { notFound, badRequest } from "@/lib/errors";
 import { logger } from "@/lib/logger";
-import { analyzeRuleset } from "@/lib/analysis/RuleAnalysisEngine";
+import { analyzeRuleset, SEVERITY_RANK, type IssueSeverity } from "@/lib/analysis/RuleAnalysisEngine";
 import { toNormalizedRules } from "@/lib/mappers/ruleMapper";
-import type { NormalizedRule } from "@/lib/parsers/types";
+import type { NormalizedObject, NormalizedRule } from "@/lib/parsers/types";
+import { advanceStatus } from "@/lib/projectStatus";
 
 /**
  * GET /api/v1/projects/[id]/analyze
- * Return existing analysis results and rule count for the project.
+ * Existing analysis results (most severe first) and the rule count.
  */
 export const GET = apiHandler(
   async ({ params, organizationId }) => {
@@ -28,10 +29,14 @@ export const GET = apiHandler(
     if (project.organizationId !== organizationId)
       return notFound("Project not found");
 
-    const results = await prisma.analysisResult.findMany({
-      where: { projectId: params.id },
-      orderBy: [{ severity: "asc" }, { category: "asc" }],
-    });
+    const rank = (s: string) => SEVERITY_RANK[s as IssueSeverity] ?? 9;
+    const results = (
+      await prisma.analysisResult.findMany({ where: { projectId: params.id } })
+    ).sort(
+      (a, b) =>
+        rank(a.severity) - rank(b.severity) ||
+        Number(a.ruleId ?? 0) - Number(b.ruleId ?? 0),
+    );
 
     return NextResponse.json({
       ruleCount: project.ruleCount,
@@ -44,11 +49,20 @@ export const GET = apiHandler(
   },
 );
 
+const SEVERITY_SCORE: Record<string, number> = {
+  critical: 10,
+  high: 8,
+  medium: 5,
+  low: 3,
+  info: 1,
+};
+
 /**
  * POST /api/v1/projects/[id]/analyze
- * Run rule analysis on all parsed normalized rules.
- * Detects shadows, overlaps, conflicts, redundancies, and overly permissive rules.
- * Creates AnalysisResult records and updates rule-level flags.
+ * Resolve the rules' objects and groups, then find shadowed, duplicate,
+ * redundant, conflicting, overlapping, overly permissive and disabled rules.
+ * Replaces the project's analysis results and every rule's analysis flags.
+ * Analysis does not change rules, so it never moves the project status back.
  */
 export const POST = apiHandler(
   async ({ params, organizationId }) => {
@@ -56,6 +70,7 @@ export const POST = apiHandler(
       where: { id: params.id },
       include: {
         normalizedRules: { orderBy: { position: "asc" } },
+        normalizedObjects: true,
       },
     });
 
@@ -69,93 +84,77 @@ export const POST = apiHandler(
       );
     }
 
-    await prisma.migrationProject.update({
-      where: { id: params.id },
-      data: { status: "ANALYZING" },
-    });
-
-    // Convert Prisma records to NormalizedRule type
     const rules: NormalizedRule[] = toNormalizedRules(project.normalizedRules);
+    const objects: NormalizedObject[] = project.normalizedObjects.map((o) => ({
+      objectType: o.objectType as NormalizedObject["objectType"],
+      name: o.name,
+      members: o.members as string[],
+      rawVendorData: o.rawVendorData as Record<string, unknown> | undefined,
+    }));
 
-    const analysis = analyzeRuleset(rules);
+    const analysis = analyzeRuleset(rules, objects);
 
-    // Delete old analysis results for this project
-    await prisma.analysisResult.deleteMany({ where: { projectId: params.id } });
+    // Per-rule flags, recomputed for every rule so stale flags never survive a re-run
+    const flags = new Map<
+      number,
+      { notes: string[]; score: number; shadowed: boolean; permissive: boolean }
+    >();
+    for (const issue of analysis.issues) {
+      const f = flags.get(issue.rulePosition) ?? {
+        notes: [],
+        score: 0,
+        shadowed: false,
+        permissive: false,
+      };
+      f.notes.push(issue.description);
+      f.score = Math.max(f.score, SEVERITY_SCORE[issue.severity] ?? 1);
+      // Never matches: shadowed, conflicting, or a duplicate of an earlier rule
+      if (issue.type === "shadow" || issue.type === "conflict") f.shadowed = true;
+      if (issue.type === "redundant" && issue.relatedRulePosition! < issue.rulePosition)
+        f.shadowed = true;
+      // "Risky" in review and on the overview: critical or high permissive findings only
+      if (issue.type === "permissive" && (SEVERITY_SCORE[issue.severity] ?? 0) >= SEVERITY_SCORE.high)
+        f.permissive = true;
+      flags.set(issue.rulePosition, f);
+    }
 
-    // Create new analysis result records
-    if (analysis.issues.length > 0) {
-      await prisma.analysisResult.createMany({
+    const status = advanceStatus(project.status, "ANALYZED");
+
+    await prisma.$transaction([
+      prisma.analysisResult.deleteMany({ where: { projectId: params.id } }),
+      prisma.analysisResult.createMany({
         data: analysis.issues.map((issue) => ({
           projectId: params.id,
           category: issue.type,
           severity: issue.severity,
           ruleId: String(issue.rulePosition),
-          title: `${issue.type.charAt(0).toUpperCase() + issue.type.slice(1)} detected: ${issue.ruleName}`,
+          title: `${issue.type.charAt(0).toUpperCase() + issue.type.slice(1)}: #${issue.rulePosition} ${issue.ruleName}`,
           description: issue.description,
           recommendation: issue.recommendation,
         })),
-      });
-    }
-
-    // Build a map of rule positions to their analysis flags
-    const shadowedPositions = new Set<number>();
-    const permissivePositions = new Set<number>();
-    const riskScores = new Map<number, number>();
-    const analysisNotes = new Map<number, string[]>();
-
-    for (const issue of analysis.issues) {
-      const pos = issue.rulePosition;
-
-      if (!analysisNotes.has(pos)) analysisNotes.set(pos, []);
-      analysisNotes.get(pos)!.push(issue.description);
-
-      if (issue.type === "shadow") shadowedPositions.add(pos);
-      if (issue.type === "permissive") permissivePositions.add(pos);
-
-      // Risk score: critical=10, high=8, medium=5, low=3, info=1
-      const severityScore =
-        issue.severity === "critical"
-          ? 10
-          : issue.severity === "high"
-            ? 8
-            : issue.severity === "medium"
-              ? 5
-              : issue.severity === "low"
-                ? 3
-                : 1;
-
-      const current = riskScores.get(pos) ?? 0;
-      riskScores.set(pos, Math.max(current, severityScore));
-    }
-
-    // Update rule flags in batch
-    const updatePromises = project.normalizedRules.map((r) => {
-      const notes = analysisNotes.get(r.position);
-      if (
-        !notes &&
-        !shadowedPositions.has(r.position) &&
-        !permissivePositions.has(r.position)
-      ) {
-        return null;
-      }
-      return prisma.normalizedRule.update({
-        where: { id: r.id },
-        data: {
-          isShadowed: shadowedPositions.has(r.position),
-          isOverlyPermissive: permissivePositions.has(r.position),
-          riskScore: riskScores.get(r.position) ?? null,
-          analysisNotes: notes ? notes.join(" | ") : null,
-        },
-      });
-    });
-
-    await Promise.all(updatePromises.filter(Boolean));
-
-    // Update project status
-    await prisma.migrationProject.update({
-      where: { id: params.id },
-      data: { status: "ANALYZED" },
-    });
+      }),
+      ...project.normalizedRules.map((r) => {
+        const f = flags.get(r.position);
+        return prisma.normalizedRule.update({
+          where: { id: r.id },
+          data: {
+            isUnused: !r.enabled,
+            isShadowed: f?.shadowed ?? false,
+            isOverlyPermissive: f?.permissive ?? false,
+            riskScore: f ? f.score : null,
+            analysisNotes: f ? f.notes.join(" | ") : null,
+          },
+        });
+      }),
+      ...(status !== project.status
+        ? [
+            prisma.migrationProject.update({
+              where: { id: params.id },
+              data: { status },
+            }),
+          ]
+        : []),
+    ]);
 
     // Build category counts
     const issuesByCategory: Record<string, number> = {};
@@ -174,6 +173,7 @@ export const POST = apiHandler(
       totalRules: analysis.totalRules,
       issues: issuesByCategory,
       summary: analysis.summary,
+      status,
     });
   },
   { rateLimit: { interval: 60_000, limit: 10 }, rateLimitPrefix: "analyze" },

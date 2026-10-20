@@ -1,0 +1,241 @@
+<?xml version="1.0"?>
+<!--
+  A grown "legacy edge" rule base for the analysis tests and the demo.
+  Every finding in it needs object resolution: rules reference address groups
+  (some nested), service groups and App-IDs, never the raw addresses.
+  RFC 5737 documentation addresses and RFC 1918-style lab ranges only.
+-->
+<config version="11.1.0" urldb="paloaltonetworks">
+  <devices>
+    <entry name="localhost.localdomain">
+      <vsys>
+        <entry name="vsys1">
+          <zone>
+            <entry name="trust"><network><layer3><member>ethernet1/2</member></layer3></network></entry>
+            <entry name="untrust"><network><layer3><member>ethernet1/1</member></layer3></network></entry>
+            <entry name="dmz"><network><layer3><member>ethernet1/3</member></layer3></network></entry>
+          </zone>
+          <address>
+            <entry name="web-srv-01"><ip-netmask>203.0.113.10/32</ip-netmask></entry>
+            <entry name="web-srv-02"><ip-netmask>203.0.113.11/32</ip-netmask></entry>
+            <entry name="web-srv-03"><ip-netmask>203.0.113.12/32</ip-netmask></entry>
+            <entry name="old-ftp-srv"><ip-netmask>203.0.113.40/32</ip-netmask></entry>
+            <entry name="dmz-net"><ip-netmask>203.0.113.0/24</ip-netmask></entry>
+            <entry name="db-srv-01"><ip-netmask>192.0.2.50/32</ip-netmask></entry>
+            <entry name="internal-net"><ip-netmask>192.0.2.0/24</ip-netmask></entry>
+            <entry name="mgmt-host"><ip-netmask>192.0.2.100/32</ip-netmask></entry>
+            <entry name="jump-host"><ip-netmask>192.0.2.101/32</ip-netmask></entry>
+            <entry name="branch-net"><ip-netmask>198.51.100.64/26</ip-netmask></entry>
+            <entry name="partner-net"><ip-netmask>198.51.100.128/25</ip-netmask></entry>
+          </address>
+          <address-group>
+            <entry name="web-servers">
+              <static><member>web-srv-01</member><member>web-srv-02</member><member>web-srv-03</member></static>
+            </entry>
+            <entry name="web-farm">
+              <description>Old name of web-servers, still used by some rules</description>
+              <static><member>web-servers</member></static>
+            </entry>
+            <entry name="dmz-hosts">
+              <static><member>web-servers</member><member>old-ftp-srv</member></static>
+            </entry>
+            <entry name="admin-hosts">
+              <static><member>mgmt-host</member><member>jump-host</member></static>
+            </entry>
+          </address-group>
+          <service>
+            <entry name="tcp-443"><protocol><tcp><port>443</port></tcp></protocol></entry>
+            <entry name="tcp-8080"><protocol><tcp><port>8080</port></tcp></protocol></entry>
+            <entry name="tcp-22"><protocol><tcp><port>22</port></tcp></protocol></entry>
+            <entry name="tcp-pgsql"><protocol><tcp><port>5432</port></tcp></protocol></entry>
+            <entry name="tcp-8000-8100"><protocol><tcp><port>8000-8100</port></tcp></protocol></entry>
+            <entry name="tcp-8080-9000"><protocol><tcp><port>8080-9000</port></tcp></protocol></entry>
+          </service>
+          <service-group>
+            <entry name="web-ports"><members><member>tcp-443</member><member>tcp-8080</member></members></entry>
+            <entry name="mgmt-ports"><members><member>tcp-22</member><member>tcp-443</member></members></entry>
+          </service-group>
+          <rulebase>
+            <security>
+              <rules>
+                <entry name="Allow-Web-Inbound">
+                  <from><member>untrust</member></from>
+                  <to><member>dmz</member></to>
+                  <source><member>any</member></source>
+                  <destination><member>web-farm</member></destination>
+                  <service><member>application-default</member></service>
+                  <application><member>ssl</member><member>web-browsing</member></application>
+                  <action>allow</action>
+                  <log-end>yes</log-end>
+                </entry>
+                <entry name="Allow-Web-02-TLS">
+                  <from><member>untrust</member></from>
+                  <to><member>dmz</member></to>
+                  <source><member>any</member></source>
+                  <destination><member>web-srv-02</member></destination>
+                  <service><member>application-default</member></service>
+                  <application><member>ssl</member></application>
+                  <action>allow</action>
+                  <log-end>yes</log-end>
+                </entry>
+                <entry name="Allow-Web-Ports">
+                  <from><member>untrust</member></from>
+                  <to><member>dmz</member></to>
+                  <source><member>any</member></source>
+                  <destination><member>web-servers</member></destination>
+                  <service><member>web-ports</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                  <log-end>yes</log-end>
+                </entry>
+                <entry name="Allow-Web-01-8080">
+                  <from><member>untrust</member></from>
+                  <to><member>dmz</member></to>
+                  <source><member>any</member></source>
+                  <destination><member>web-srv-01</member></destination>
+                  <service><member>tcp-8080</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                </entry>
+                <entry name="Block-Web-03-Maintenance">
+                  <from><member>untrust</member></from>
+                  <to><member>dmz</member></to>
+                  <source><member>any</member></source>
+                  <destination><member>web-srv-03</member></destination>
+                  <service><member>tcp-443</member></service>
+                  <application><member>any</member></application>
+                  <action>deny</action>
+                  <log-end>yes</log-end>
+                </entry>
+                <entry name="Allow-Web-to-DB">
+                  <from><member>dmz</member></from>
+                  <to><member>trust</member></to>
+                  <source><member>web-servers</member></source>
+                  <destination><member>db-srv-01</member></destination>
+                  <service><member>tcp-pgsql</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                </entry>
+                <entry name="Allow-Webfarm-to-DB">
+                  <from><member>dmz</member></from>
+                  <to><member>trust</member></to>
+                  <source><member>web-farm</member></source>
+                  <destination><member>db-srv-01</member></destination>
+                  <service><member>tcp-pgsql</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                </entry>
+                <entry name="Allow-Admin-SSH">
+                  <from><member>trust</member></from>
+                  <to><member>dmz</member></to>
+                  <source><member>mgmt-host</member></source>
+                  <destination><member>web-servers</member></destination>
+                  <service><member>tcp-22</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                </entry>
+                <entry name="Allow-Admin-Mgmt">
+                  <from><member>trust</member></from>
+                  <to><member>dmz</member></to>
+                  <source><member>admin-hosts</member></source>
+                  <destination><member>dmz-hosts</member></destination>
+                  <service><member>mgmt-ports</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                  <log-end>yes</log-end>
+                </entry>
+                <entry name="Deny-DMZ-to-LAN">
+                  <from><member>dmz</member></from>
+                  <to><member>trust</member></to>
+                  <source><member>dmz-net</member></source>
+                  <destination><member>internal-net</member></destination>
+                  <service><member>any</member></service>
+                  <application><member>any</member></application>
+                  <action>deny</action>
+                  <log-end>yes</log-end>
+                </entry>
+                <entry name="Allow-Partner-API">
+                  <from><member>untrust</member></from>
+                  <to><member>dmz</member></to>
+                  <source><member>partner-net</member></source>
+                  <destination><member>web-srv-01</member></destination>
+                  <service><member>tcp-8000-8100</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                </entry>
+                <entry name="Block-High-Ports">
+                  <from><member>untrust</member></from>
+                  <to><member>dmz</member></to>
+                  <source><member>any</member></source>
+                  <destination><member>web-servers</member></destination>
+                  <service><member>tcp-8080-9000</member></service>
+                  <application><member>any</member></application>
+                  <action>deny</action>
+                  <log-end>yes</log-end>
+                </entry>
+                <entry name="Allow-Branch-to-LAN">
+                  <from><member>untrust</member></from>
+                  <to><member>trust</member></to>
+                  <source><member>branch-net</member></source>
+                  <destination><member>internal-net</member></destination>
+                  <service><member>any</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                </entry>
+                <entry name="Temp-Allow-All-Outbound">
+                  <from><member>trust</member></from>
+                  <to><member>untrust</member></to>
+                  <source><member>any</member></source>
+                  <destination><member>any</member></destination>
+                  <service><member>any</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                  <description>Temporary, added during the 2019 outage</description>
+                </entry>
+                <entry name="Allow-LAN-Web-Out">
+                  <from><member>trust</member></from>
+                  <to><member>untrust</member></to>
+                  <source><member>internal-net</member></source>
+                  <destination><member>any</member></destination>
+                  <service><member>application-default</member></service>
+                  <application><member>ssl</member><member>web-browsing</member></application>
+                  <action>allow</action>
+                  <log-end>yes</log-end>
+                </entry>
+                <entry name="Old-Test-Rule">
+                  <from><member>trust</member></from>
+                  <to><member>dmz</member></to>
+                  <source><member>any</member></source>
+                  <destination><member>old-ftp-srv</member></destination>
+                  <service><member>any</member></service>
+                  <application><member>any</member></application>
+                  <action>allow</action>
+                  <disabled>yes</disabled>
+                </entry>
+                <entry name="Allow-Monitoring">
+                  <from><member>trust</member></from>
+                  <to><member>dmz</member></to>
+                  <source><member>nms-poller</member></source>
+                  <destination><member>web-servers</member></destination>
+                  <service><member>application-default</member></service>
+                  <application><member>ping</member></application>
+                  <action>allow</action>
+                </entry>
+                <entry name="Deny-All">
+                  <from><member>any</member></from>
+                  <to><member>any</member></to>
+                  <source><member>any</member></source>
+                  <destination><member>any</member></destination>
+                  <service><member>any</member></service>
+                  <application><member>any</member></application>
+                  <action>deny</action>
+                  <log-end>yes</log-end>
+                </entry>
+              </rules>
+            </security>
+          </rulebase>
+        </entry>
+      </vsys>
+    </entry>
+  </devices>
+</config>
