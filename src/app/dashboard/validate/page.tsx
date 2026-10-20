@@ -20,7 +20,7 @@ import { PageHeader } from "@/components/ProjectHeader";
 const vendorOptions = VENDOR_LIST.map((v) => ({ value: v.id, label: v.label }));
 
 const vendorLabels: Record<string, string> = Object.fromEntries(
-  vendorOptions.map((v) => [v.value, v.label]),
+  VENDOR_LIST.map((v) => [v.id, v.short]),
 );
 
 interface ValidationIssue {

@@ -70,7 +70,7 @@ export function OverviewView({ data, today }: { data: OverviewData; today: strin
         </label>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[1.25fr_.75fr_1.1fr]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2 xl:grid-cols-[1.25fr_.75fr_1.1fr]">
         <ActivityTile activity={data.activity} />
 
         <div className="grid gap-3">
@@ -97,7 +97,7 @@ export function OverviewView({ data, today }: { data: OverviewData; today: strin
         <ReadinessTile project={focus} />
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-[1.6fr_1fr]">
+      <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-[1.6fr_1fr]">
         <section className="card p-[18px]" aria-labelledby="queue-h">
           <div className="mb-3.5 flex items-center justify-between">
             <h2 id="queue-h" className="!text-base">Review queue</h2>
