@@ -190,7 +190,7 @@ export function OverviewView({ data, today }: { data: OverviewData; today: strin
               <thead>
                 <tr>
                   <th>Name</th>
-                  <th>Migration</th>
+                  <th className="hidden sm:table-cell">Migration</th>
                   <th className="hidden sm:table-cell">Rules</th>
                   <th className="hidden md:table-cell">Approved</th>
                   <th>Status</th>
@@ -209,7 +209,7 @@ export function OverviewView({ data, today }: { data: OverviewData; today: strin
                           {p.name}
                         </Link>
                       </td>
-                      <td className="font-mono text-xs whitespace-nowrap text-ink-65">
+                      <td className="hidden font-mono text-xs whitespace-nowrap text-ink-65 sm:table-cell">
                         {pairLabel(p.sourceVendor, p.targetVendor)}
                       </td>
                       <td className="hidden sm:table-cell">{nf.format(p.ruleCount)}</td>
