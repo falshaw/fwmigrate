@@ -12,9 +12,12 @@ import {
 } from "lucide-react";
 import type { OverviewData, OverviewProject, QueueItem } from "@/lib/dashboard";
 import { vendorShort } from "@/lib/vendors";
-import { projectStatusBadge } from "@/lib/ui/rules";
+import { ProjectsTable } from "@/components/ProjectsTable";
 
 const nf = new Intl.NumberFormat("en-GB");
+
+/** The overview lists the most recently updated projects, like the old dashboard. */
+const RECENT = 8;
 
 function pairLabel(source: string, target: string) {
   return `${vendorShort(source)}→${vendorShort(target)}`;
@@ -83,8 +86,8 @@ export function OverviewView({ data, today }: { data: OverviewData; today: strin
           <StatTile
             icon={<CircleAlert className="h-[18px] w-[18px]" />}
             tone="text-amber"
-            value={data.totals.pending}
-            label="Pending review"
+            value={data.totals.needsReview}
+            label="Needs review"
           />
           <StatTile
             icon={<TriangleAlert className="h-[18px] w-[18px]" />}
@@ -101,9 +104,9 @@ export function OverviewView({ data, today }: { data: OverviewData; today: strin
         <section className="card p-[18px]" aria-labelledby="queue-h">
           <div className="mb-3.5 flex items-center justify-between">
             <h2 id="queue-h" className="!text-base">Review queue</h2>
-            {next && (
+            {(data.queue[0]?.projectId ?? next?.id) && (
               <Link
-                href={`/dashboard/projects/${next.id}/review`}
+                href={`/dashboard/projects/${data.queue[0]?.projectId ?? next?.id}/review`}
                 className="text-xs font-semibold text-accent hover:underline"
               >
                 Open review
@@ -173,58 +176,26 @@ export function OverviewView({ data, today }: { data: OverviewData; today: strin
         />
       ) : null}
 
-      <section id="projects" className="card mt-4 scroll-mt-6 overflow-hidden" aria-labelledby="projects-h">
-        <div className="flex items-center justify-between px-[18px] pt-[18px] pb-2">
-          <h2 id="projects-h" className="!text-base">Projects</h2>
-          <Link href="/dashboard/projects/new" className="btn btn-primary btn-sm">
-            <Plus className="h-3.5 w-3.5" aria-hidden /> New migration
-          </Link>
+      <section className="card mt-4 overflow-hidden" aria-labelledby="projects-h">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-[18px] pt-[18px] pb-2">
+          <h2 id="projects-h" className="!text-base">Recent projects</h2>
+          <div className="flex items-center gap-2">
+            {data.projects.length > RECENT && (
+              <Link href="/dashboard/projects" className="btn btn-ghost btn-sm">
+                All {data.projects.length} projects
+              </Link>
+            )}
+            <Link href="/dashboard/projects/new" className="btn btn-primary btn-sm">
+              <Plus className="h-3.5 w-3.5" aria-hidden /> New migration
+            </Link>
+          </div>
         </div>
         {projects.length === 0 ? (
           <p className="px-[18px] pt-4 pb-8 text-center text-[13px] text-ink-65">
             {q ? "No projects match the search." : "No migration projects yet."}
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th className="hidden sm:table-cell">Migration</th>
-                  <th className="hidden sm:table-cell">Rules</th>
-                  <th className="hidden md:table-cell">Approved</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {projects.map((p) => {
-                  const badge = projectStatusBadge(p.status);
-                  return (
-                    <tr key={p.id}>
-                      <td className="max-w-[220px]">
-                        <Link
-                          href={`/dashboard/projects/${p.id}`}
-                          className="block truncate font-semibold hover:text-accent"
-                        >
-                          {p.name}
-                        </Link>
-                      </td>
-                      <td className="hidden font-mono text-xs whitespace-nowrap text-ink-65 sm:table-cell">
-                        {pairLabel(p.sourceVendor, p.targetVendor)}
-                      </td>
-                      <td className="hidden sm:table-cell">{nf.format(p.ruleCount)}</td>
-                      <td className="hidden md:table-cell text-ink-65">
-                        {p.translated ? `${nf.format(p.approved)} / ${nf.format(p.translated)}` : "—"}
-                      </td>
-                      <td>
-                        <span className={`badge ${badge.cls}`}>{badge.label}</span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <ProjectsTable projects={projects.slice(0, RECENT)} />
         )}
       </section>
     </div>

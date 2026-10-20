@@ -27,7 +27,7 @@ type NavItem = {
 };
 
 const isProjectPage = (p: string) =>
-  p.startsWith("/dashboard/projects/") && p !== "/dashboard/projects/new";
+  p.startsWith("/dashboard/projects") && p !== "/dashboard/projects/new";
 
 const MAIN: NavItem[] = [
   {
@@ -37,7 +37,7 @@ const MAIN: NavItem[] = [
     match: (p) => p === "/dashboard",
   },
   {
-    href: "/dashboard#projects",
+    href: "/dashboard/projects",
     label: "Projects",
     icon: List,
     match: isProjectPage,

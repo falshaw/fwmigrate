@@ -301,7 +301,7 @@ export default function ValidatePage() {
                 <p className="text-[13px] text-ink-65 py-2">
                   No projects with translated rules available.{" "}
                   <Link
-                    href="/dashboard"
+                    href="/dashboard/projects/new"
                     className="font-semibold text-accent hover:underline"
                   >
                     Create a project

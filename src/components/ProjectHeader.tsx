@@ -123,7 +123,7 @@ export function ProjectHeader({
       <div className="flex flex-wrap items-end justify-between gap-4 mb-[18px]">
         <div className="min-w-0">
           <div className="eyebrow truncate">
-            <Link href="/dashboard#projects" className="hover:text-ink">
+            <Link href="/dashboard/projects" className="hover:text-ink">
               Projects
             </Link>
             {" / "}
