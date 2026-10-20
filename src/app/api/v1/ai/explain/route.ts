@@ -11,6 +11,7 @@ import prisma from "@/lib/prisma";
 import { notFound, badRequest } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { explainTranslation } from "@/lib/ai/TranslationAI";
+import { isLlmEnabled } from "@/lib/ai/OllamaClient";
 import { toNormalizedRule } from "@/lib/mappers/ruleMapper";
 import type { FirewallVendor, NormalizedRule } from "@/lib/parsers/types";
 
@@ -55,23 +56,33 @@ export const POST = apiHandler<ExplainInput>(
     // Build normalized rule type for the AI function
     const normalizedRule: NormalizedRule = toNormalizedRule(rule);
 
+    if (!isLlmEnabled()) {
+      return NextResponse.json(
+        { error: "No LLM configured (LLM_PROVIDER=none)" },
+        { status: 503 },
+      );
+    }
+
     const explanation = await explainTranslation(
       normalizedRule,
       rule.translatedRule.targetConfig,
       rule.project.sourceVendor as FirewallVendor,
       rule.project.targetVendor as FirewallVendor,
+      (rule.translatedRule.warnings as string[] | null) ?? [],
     );
 
     logger.info("AI explanation generated", {
       ruleId: body.ruleId,
-      confidence: explanation.confidence,
+      source: explanation.source,
     });
 
     return NextResponse.json({
       ruleId: body.ruleId,
       explanation: explanation.explanation,
       warnings: explanation.warnings,
-      confidence: explanation.confidence,
+      source: explanation.source,
+      // Confidence stays the deterministic translator's score
+      confidence: rule.translatedRule.confidence,
     });
   },
   {

@@ -11,7 +11,7 @@ import prisma from "@/lib/prisma";
 import { notFound, badRequest } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { suggestZoneMappings } from "@/lib/ai/ZoneMappingAI";
-import { ollamaGenerate } from "@/lib/ai/OllamaClient";
+import { ollamaGenerate, isLlmEnabled } from "@/lib/ai/OllamaClient";
 import type { FirewallVendor } from "@/lib/parsers/types";
 
 const suggestSchema = z.object({
@@ -30,6 +30,12 @@ type SuggestInput = z.infer<typeof suggestSchema>;
  */
 export const POST = apiHandler<SuggestInput>(
   async ({ body, organizationId }) => {
+    if (!isLlmEnabled()) {
+      return NextResponse.json(
+        { error: "No LLM configured (LLM_PROVIDER=none)" },
+        { status: 503 },
+      );
+    }
     const project = await prisma.migrationProject.findUnique({
       where: { id: body.projectId },
       include: {

@@ -17,6 +17,7 @@ interface NormalizedRuleWithTranslation {
     id: string;
     targetConfig: string;
     explanation: string;
+    warnings?: string[] | null;
     confidence: number;
     reviewStatus: string;
   };
@@ -120,6 +121,19 @@ export default function ReviewPage() {
               <p className="text-sm text-gray-300 mb-3">
                 {rule.translatedRule!.explanation}
               </p>
+
+              {(rule.translatedRule!.warnings ?? []).length > 0 && (
+                <ul className="text-xs mb-3 space-y-1">
+                  {(rule.translatedRule!.warnings ?? []).map((w, i) => (
+                    <li
+                      key={i}
+                      className={w.startsWith("REVIEW:") ? "text-red-400" : "text-yellow-400/80"}
+                    >
+                      {w}
+                    </li>
+                  ))}
+                </ul>
+              )}
 
               <div className="flex gap-2">
                 <button
