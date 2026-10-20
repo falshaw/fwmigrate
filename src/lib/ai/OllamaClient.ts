@@ -32,6 +32,13 @@ export function llmProvider(): string {
   return isLlmEnabled() ? LLM_PROVIDER : "none";
 }
 
+/** Model name shown next to AI output, e.g. "ollama · gemma4:31b". */
+export function llmModel(): string {
+  if (LLM_PROVIDER === "ollama") return OLLAMA_MODEL;
+  if (LLM_PROVIDER === "claude") return (process.env.CLAUDE_MODEL || "opus").toLowerCase();
+  return "";
+}
+
 function isTimeout(error: unknown): boolean {
   return (
     error instanceof Error &&

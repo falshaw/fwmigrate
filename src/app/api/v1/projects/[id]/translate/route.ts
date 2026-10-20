@@ -23,6 +23,7 @@ import {
 } from "@/lib/ai/explainJobs";
 import type { FirewallVendor, NormalizedObject } from "@/lib/parsers/types";
 import type { ZoneMapping } from "@/lib/generators/GeneratorInterface";
+import { statusAfterTranslate } from "@/lib/projectStatus";
 
 const translateSchema = z
   .object({
@@ -40,6 +41,15 @@ async function loadProject(id: string, organizationId: string) {
       normalizedRules: { orderBy: { position: "asc" } },
       normalizedObjects: true,
       zoneMappings: true,
+      translatedRules: {
+        select: {
+          id: true,
+          normalizedRuleId: true,
+          targetConfig: true,
+          reviewStatus: true,
+          aiExplanation: true,
+        },
+      },
     },
   });
   if (!project || project.organizationId !== organizationId) return null;
@@ -72,10 +82,6 @@ export const POST = apiHandler(
     }
 
     cancelExplainJob(params.id);
-    await prisma.migrationProject.update({
-      where: { id: params.id },
-      data: { status: "TRANSLATING" },
-    });
 
     const started = Date.now();
     const sourceVendor = project.sourceVendor as FirewallVendor;
@@ -97,29 +103,90 @@ export const POST = apiHandler(
     const result = await generator.generate(rules, objects, zoneMappings);
     const byPosition = new Map(result.ruleConfigs.map((rc) => [rc.position, rc]));
 
-    const data: Prisma.TranslatedRuleCreateManyInput[] = project.normalizedRules.map((nr) => {
-      const rc = byPosition.get(nr.position)!;
-      return {
-        projectId: params.id,
-        normalizedRuleId: nr.id,
-        targetConfig: rc.config,
-        targetVendor: project.targetVendor,
-        explanation: rc.explanation,
-        warnings: rc.warnings.length ? rc.warnings : Prisma.JsonNull,
-        confidence: rc.confidence,
-      };
-    });
+    // Keep a rule's review (and AI explanation) when its generated config is
+    // unchanged; only rules whose output changed go back to PENDING.
+    const previous = new Map(project.translatedRules.map((t) => [t.normalizedRuleId, t]));
+    const next = project.normalizedRules.map((nr) => ({
+      nr,
+      rc: byPosition.get(nr.position)!,
+    }));
+    const outcome = statusAfterTranslate(
+      project.status,
+      project.translatedRules,
+      next.map(({ nr, rc }) => ({ normalizedRuleId: nr.id, targetConfig: rc.config })),
+    );
+
+    const writes: Prisma.PrismaPromise<unknown>[] = [];
+    const create: Prisma.TranslatedRuleCreateManyInput[] = [];
+    const keepIds = new Set<string>();
+    for (const { nr, rc } of next) {
+      const warnings = rc.warnings.length ? rc.warnings : Prisma.JsonNull;
+      const prev = previous.get(nr.id);
+      if (prev && prev.targetConfig === rc.config) {
+        keepIds.add(prev.id);
+        writes.push(
+          prisma.translatedRule.update({
+            where: { id: prev.id },
+            data: {
+              explanation: rc.explanation,
+              confidence: rc.confidence,
+              // AI warnings of a kept explanation stay with it
+              ...(prev.aiExplanation ? {} : { warnings }),
+            },
+          }),
+        );
+      } else if (prev) {
+        keepIds.add(prev.id);
+        writes.push(
+          prisma.translatedRule.update({
+            where: { id: prev.id },
+            data: {
+              targetConfig: rc.config,
+              targetVendor: project.targetVendor,
+              explanation: rc.explanation,
+              warnings,
+              confidence: rc.confidence,
+              aiExplanation: null,
+              aiModel: null,
+              aiExplainedAt: null,
+              reviewStatus: "PENDING",
+              reviewerNote: null,
+              manualOverride: null,
+              reviewedAt: null,
+              reviewedById: null,
+            },
+          }),
+        );
+      } else {
+        create.push({
+          projectId: params.id,
+          normalizedRuleId: nr.id,
+          targetConfig: rc.config,
+          targetVendor: project.targetVendor,
+          explanation: rc.explanation,
+          warnings,
+          confidence: rc.confidence,
+        });
+      }
+    }
 
     await prisma.$transaction([
-      prisma.translatedRule.deleteMany({ where: { projectId: params.id } }),
-      prisma.translatedRule.createMany({ data }),
-      prisma.migrationProject.update({
-        where: { id: params.id },
-        data: { status: "TRANSLATED" },
+      prisma.translatedRule.deleteMany({
+        where: { projectId: params.id, id: { notIn: [...keepIds] } },
       }),
+      ...writes,
+      prisma.translatedRule.createMany({ data: create }),
+      ...(outcome.status !== project.status
+        ? [
+            prisma.migrationProject.update({
+              where: { id: params.id },
+              data: { status: outcome.status },
+            }),
+          ]
+        : []),
     ]);
 
-    const translatedCount = data.length;
+    const translatedCount = next.length;
     const averageConfidence =
       Math.round((result.ruleConfigs.reduce((s, r) => s + r.confidence, 0) / translatedCount) * 100) / 100;
     const reviewFlags = result.ruleConfigs.filter((r) => r.warnings.some((w) => w.startsWith("REVIEW:"))).length;
@@ -130,10 +197,13 @@ export const POST = apiHandler(
     if (isLlmEnabled() && wantExplain && explainLimits().maxRules > 0) {
       const stored = await prisma.translatedRule.findMany({
         where: { projectId: params.id },
-        select: { id: true, normalizedRule: { select: { position: true } } },
+        select: { id: true, aiExplanation: true, normalizedRule: { select: { position: true } } },
       });
-      const idByPosition = new Map(stored.map((s) => [s.normalizedRule.position, s.id]));
-      const items: ExplainItem[] = rules.map((rule) => {
+      // Rules whose output did not change keep their AI explanation; only the rest is queued
+      const idByPosition = new Map(
+        stored.filter((s) => !s.aiExplanation).map((s) => [s.normalizedRule.position, s.id]),
+      );
+      const items: ExplainItem[] = rules.filter((rule) => idByPosition.has(rule.position)).map((rule) => {
         const rc = byPosition.get(rule.position)!;
         return {
           translatedRuleId: idByPosition.get(rule.position)!,
@@ -158,6 +228,9 @@ export const POST = apiHandler(
       translatedCount,
       averageConfidence,
       rulesWithReviewFlags: reviewFlags,
+      changedRules: outcome.changed,
+      unchangedRules: outcome.kept,
+      status: outcome.status,
       durationMs: Date.now() - started,
       explain,
     });
