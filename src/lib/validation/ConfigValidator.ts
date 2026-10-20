@@ -137,6 +137,18 @@ function validateCiscoASA(config: string): ValidationIssue[] {
     // access-list validation
     if (line.startsWith("access-list")) {
       const parts = line.split(/\s+/);
+      // "access-list <name> remark <text>" is complete with any text, even one word.
+      if (parts[2] === "remark") {
+        if (parts.length < 4) {
+          issues.push({
+            severity: "error",
+            line: lineNum,
+            message: "Empty access-list remark",
+            suggestion: "Format: access-list <name> remark <text>",
+          });
+        }
+        continue;
+      }
       if (parts.length < 5) {
         issues.push({
           severity: "error",
