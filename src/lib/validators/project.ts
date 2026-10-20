@@ -5,15 +5,9 @@
  */
 
 import { z } from "zod";
+import { SUPPORTED_VENDORS } from "@/lib/vendors";
 
-const vendorEnum = z.enum([
-  "PALO_ALTO",
-  "CISCO_ASA",
-  "CISCO_FTD",
-  "CHECKPOINT",
-  "FORTINET",
-  "JUNIPER_SRX",
-]);
+export const vendorEnum = z.enum(SUPPORTED_VENDORS);
 
 export const createProjectSchema = z.object({
   name: z.string().min(1).max(200),

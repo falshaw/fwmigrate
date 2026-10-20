@@ -146,9 +146,15 @@ describe("FortinetParser", () => {
   });
 
   describe("parse() - address objects", () => {
-    // 10 firewall address entries + 3 addrgrp entries = 13 total objects
-    it("should parse 13 address objects total (addresses + groups)", () => {
-      expect(result.objects).toHaveLength(13);
+    // 10 firewall address entries + 3 addrgrp entries + 4 custom services = 17
+    it("should parse 17 objects total (addresses + groups + custom services)", () => {
+      expect(result.objects).toHaveLength(17);
+    });
+
+    it("should parse custom services with their port ranges", () => {
+      const app = result.objects.find((o) => o.name === "APP-PORTS");
+      expect(app!.objectType).toBe("service");
+      expect(app!.members).toEqual(["tcp/3000-3010"]);
     });
 
     it("should parse subnet address as address type with CIDR member", () => {

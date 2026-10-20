@@ -167,9 +167,17 @@ describe("PaloAltoParser", () => {
   });
 
   describe("parse() - address objects", () => {
-    // 10 address entries + 3 address-group entries = 13
-    it("should parse 13 address objects total", () => {
-      expect(result.objects).toHaveLength(13);
+    // 10 address entries + 3 address-group entries + 5 service entries = 18
+    it("should parse 18 objects total (addresses, groups, services)", () => {
+      expect(result.objects).toHaveLength(18);
+    });
+
+    it("should parse service objects with protocol and port", () => {
+      const svc = result.objects.find((o) => o.name === "tcp-app-range");
+      expect(svc!.objectType).toBe("service");
+      expect(svc!.members).toEqual(["tcp/3000-3010"]);
+      const syslog = result.objects.find((o) => o.name === "udp-syslog");
+      expect(syslog!.members).toEqual(["udp/514"]);
     });
 
     it("should parse ip-netmask address objects", () => {

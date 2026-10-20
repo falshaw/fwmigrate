@@ -73,11 +73,8 @@ export class CheckPointParser implements IConfigParser {
   private buildObjectMap(
     data: Record<string, unknown>,
     log: ParseLogEntry[],
-  ): Map<string, { name: string; type: string; value: string }> {
-    const map = new Map<
-      string,
-      { name: string; type: string; value: string }
-    >();
+  ): Map<string, CpObject> {
+    const map = new Map<string, CpObject>();
 
     // objects-dictionary contains all referenced objects
     const objectsDictionary = (data["objects-dictionary"] ||
@@ -95,9 +92,27 @@ export class CheckPointParser implements IConfigParser {
           value = `${obj["ipv4-address"]}/32`;
         else if (type === "network" && obj["subnet4"] && obj["mask-length4"])
           value = `${obj["subnet4"]}/${obj["mask-length4"]}`;
+        else if (
+          type === "address-range" &&
+          obj["ipv4-address-first"] &&
+          obj["ipv4-address-last"]
+        )
+          value = `${obj["ipv4-address-first"]}-${obj["ipv4-address-last"]}`;
+        else if ((type === "service-tcp" || type === "service-udp") && obj.port)
+          value = `${type === "service-tcp" ? "tcp" : "udp"}/${String(obj.port).replace(/^=/, "")}`;
+        else if (type === "service-icmp") value = "icmp";
         else if (type === "CpmiAnyObject") value = "any";
 
-        map.set(uid, { name, type, value });
+        const members = Array.isArray(obj.members)
+          ? (obj.members as unknown[]).map((m) =>
+              typeof m === "string"
+                ? m
+                : (((m as Record<string, unknown>)?.uid as string) ??
+                  ((m as Record<string, unknown>)?.name as string)),
+            )
+          : undefined;
+
+        map.set(uid, { name, type, value, members });
       }
     }
 
@@ -110,7 +125,7 @@ export class CheckPointParser implements IConfigParser {
 
   private parseRulebase(
     data: Record<string, unknown>,
-    objectsMap: Map<string, { name: string; type: string; value: string }>,
+    objectsMap: Map<string, CpObject>,
     log: ParseLogEntry[],
   ): NormalizedRule[] {
     const rules: NormalizedRule[] = [];
@@ -133,7 +148,10 @@ export class CheckPointParser implements IConfigParser {
               : ((ref as Record<string, unknown>)?.uid as string) ||
                 ((ref as Record<string, unknown>)?.name as string);
           const obj = objectsMap.get(uid);
-          return obj?.value || obj?.name || uid || "any";
+          if (!obj) return uid || "any";
+          if (obj.type === "CpmiAnyObject") return "any";
+          // Named objects keep their name; the object list carries the value
+          return obj.name;
         });
       };
 
@@ -196,10 +214,11 @@ export class CheckPointParser implements IConfigParser {
   }
 
   private extractObjects(
-    objectsMap: Map<string, { name: string; type: string; value: string }>,
+    objectsMap: Map<string, CpObject>,
     log: ParseLogEntry[],
   ): NormalizedObject[] {
     const objects: NormalizedObject[] = [];
+    const nameOf = (uid: string) => objectsMap.get(uid)?.name ?? uid;
 
     for (const [, obj] of objectsMap) {
       if (["host", "network", "address-range"].includes(obj.type)) {
@@ -212,7 +231,19 @@ export class CheckPointParser implements IConfigParser {
         objects.push({
           objectType: "address-group",
           name: obj.name,
+          members: (obj.members ?? []).map(nameOf),
+        });
+      } else if (["service-tcp", "service-udp", "service-icmp"].includes(obj.type)) {
+        objects.push({
+          objectType: "service",
+          name: obj.name,
           members: [obj.value],
+        });
+      } else if (obj.type === "service-group") {
+        objects.push({
+          objectType: "service-group",
+          name: obj.name,
+          members: (obj.members ?? []).map(nameOf),
         });
       }
     }
@@ -220,4 +251,11 @@ export class CheckPointParser implements IConfigParser {
     log.push({ level: "info", message: `Extracted ${objects.length} objects` });
     return objects;
   }
+}
+
+interface CpObject {
+  name: string;
+  type: string;
+  value: string;
+  members?: string[];
 }

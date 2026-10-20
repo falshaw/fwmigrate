@@ -2,123 +2,185 @@
  * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
+ *
+ * FortiOS CLI generator (config firewall address / addrgrp / service custom /
+ * policy).
  */
 
-import type {
-  IConfigGenerator,
-  GeneratorResult,
-  RuleConfig,
-  RollbackCommand,
-  ZoneMapping,
-} from "./GeneratorInterface";
-import type {
-  FirewallVendor,
-  NormalizedRule,
-  NormalizedObject,
-} from "../parsers/types";
+import type { RollbackCommand, ZoneMapping } from "./GeneratorInterface";
+import type { FirewallVendor, NormalizedRule } from "../parsers/types";
+import {
+  BaseGenerator,
+  GenContext,
+  analyseRule,
+  confidenceFrom,
+  describeRule,
+  prefixToMask,
+  quote,
+  unknownAddressWarning,
+  type RuleTranslation,
+} from "./base";
+import { SERVICE_CATALOG, type ResolvedService } from "./services";
 
-export class FortinetGenerator implements IConfigGenerator {
+const NAME_MAX = 35; // FortiOS policy name length limit
+const COMMENT_MAX = 1023;
+
+export class FortinetGenerator extends BaseGenerator {
   vendor: FirewallVendor = "FORTINET";
+  commentPrefix = "#";
+  protected targetLabel = "a FortiOS firewall policy";
 
-  async generate(
-    rules: NormalizedRule[],
-    objects: NormalizedObject[],
-    zoneMappings: ZoneMapping[],
-  ): Promise<GeneratorResult> {
-    const warnings: string[] = [];
-    const objectsCreated: string[] = [];
-    const ruleConfigs: RuleConfig[] = [];
-    const configLines: string[] = [];
+  protected translateRule(rule: NormalizedRule, ctx: GenContext): RuleTranslation {
+    const facts = analyseRule(rule, ctx, this.vendor);
+    const warnings = [...facts.warnings];
+    const unknown: string[] = [];
+    let extraPenalty = 0;
 
-    // Address objects
-    configLines.push("config firewall address");
-    for (const obj of objects) {
-      if (obj.objectType === "address" && obj.members.length > 0) {
-        configLines.push(`    edit "${obj.name}"`);
-        const member = obj.members[0];
-        if (member.includes("/"))
-          configLines.push(`        set subnet ${member.replace("/", " ")}`);
-        else configLines.push(`        set subnet ${member} 255.255.255.255`);
-        configLines.push("    next");
-        objectsCreated.push(obj.name);
-      }
+    const srcintf = ctx.mapZone(rule.sourceZone) ?? "any";
+    const dstintf = ctx.mapZone(rule.destinationZone) ?? "any";
+
+    const addrs = (tokens: string[]) => {
+      const names = tokens.map((t) => ctx.useAddress(t, unknown));
+      return names.includes(null) || names.length === 0
+        ? ["all"]
+        : [...new Set(names as string[])];
+    };
+    const srcaddr = addrs(rule.sources);
+    const dstaddr = addrs(rule.destinations);
+
+    let services: string[];
+    if (facts.services.any || facts.forceDisable) {
+      services = ["ALL"];
+    } else {
+      services = facts.services.services.flatMap((s) => this.serviceNames(s, ctx));
+      services = [...new Set(services)];
     }
-    configLines.push("end");
 
-    // Policies
-    configLines.push("");
-    configLines.push("config firewall policy");
-    for (const rule of rules) {
-      const config = this.generateRule(rule, zoneMappings);
-      configLines.push(config);
-      ruleConfigs.push({
-        position: rule.position,
-        ruleName: rule.name,
-        config,
-        explanation: `Policy ${rule.position}: ${rule.action} from ${rule.sourceZone || "any"} to ${rule.destinationZone || "any"}`,
-        warnings: [],
-      });
+    let name = rule.name;
+    if (name.length > NAME_MAX) {
+      name = name.slice(0, NAME_MAX);
+      warnings.push(`Policy name shortened to ${NAME_MAX} characters (FortiOS limit).`);
+      extraPenalty += 0.02;
     }
-    configLines.push("end");
 
+    const commentParts: string[] = [];
+    if (rule.description) commentParts.push(rule.description);
+    if (facts.services.applications.length)
+      commentParts.push(`Source App-ID: ${facts.services.applications.join(", ")}`);
+    if (facts.forceDisable) commentParts.push("REVIEW: service unresolved, disabled by migration");
+    const comment = commentParts.join(" | ").slice(0, COMMENT_MAX);
+
+    const lines: string[] = [];
+    lines.push(`    edit ${rule.position}`);
+    lines.push(`        set name ${quote(name)}`);
+    lines.push(`        set srcintf ${quote(srcintf)}`);
+    lines.push(`        set dstintf ${quote(dstintf)}`);
+    lines.push(`        set srcaddr ${srcaddr.map(quote).join(" ")}`);
+    lines.push(`        set dstaddr ${dstaddr.map(quote).join(" ")}`);
+    lines.push(`        set action ${rule.action === "permit" ? "accept" : "deny"}`);
+    lines.push(`        set schedule "always"`);
+    lines.push(`        set service ${services.map(quote).join(" ")}`);
+    lines.push(`        set logtraffic ${rule.logging ? "all" : "disable"}`);
+    if (!rule.enabled || facts.forceDisable) lines.push(`        set status disable`);
+    if (comment) lines.push(`        set comments ${quote(comment)}`);
+    lines.push("    next");
+
+    warnings.push(...unknownAddressWarning(unknown));
     return {
-      config: configLines.join("\n"),
-      ruleConfigs,
+      config: lines.join("\n"),
       warnings,
-      objectsCreated,
+      confidence: confidenceFrom(facts, extraPenalty, new Set(unknown).size),
+      explanation: describeRule(rule, facts, this.targetLabel),
     };
   }
 
-  generateRule(rule: NormalizedRule, zoneMappings: ZoneMapping[]): string {
-    const srcIntf = this.mapZone(rule.sourceZone, zoneMappings) || "any";
-    const dstIntf = this.mapZone(rule.destinationZone, zoneMappings) || "any";
-    const action = rule.action === "permit" ? "accept" : "deny";
-    const lines: string[] = [];
-
-    lines.push(`    edit ${rule.position}`);
-    lines.push(`        set name "${rule.name}"`);
-    lines.push(`        set srcintf "${srcIntf}"`);
-    lines.push(`        set dstintf "${dstIntf}"`);
-    lines.push(
-      `        set srcaddr ${rule.sources.map((s) => `"${s}"`).join(" ")}`,
-    );
-    lines.push(
-      `        set dstaddr ${rule.destinations.map((d) => `"${d}"`).join(" ")}`,
-    );
-    lines.push(
-      `        set service ${rule.services.map((s) => `"${s}"`).join(" ")}`,
-    );
-    lines.push(`        set action ${action}`);
-    lines.push(`        set schedule "always"`);
-    if (rule.logging) lines.push(`        set logtraffic all`);
-    if (!rule.enabled) lines.push(`        set status disable`);
-    if (rule.description)
-      lines.push(`        set comments "${rule.description}"`);
-    lines.push("    next");
-
-    return lines.join("\n");
+  private serviceNames(s: ResolvedService, ctx: GenContext): string[] {
+    if (s.key && s.origin !== "object") {
+      const predefined = SERVICE_CATALOG[s.key]?.names.fortinet;
+      if (predefined) return [predefined];
+    }
+    const name = s.label.replace(/_/g, "-");
+    const icmp = s.specs.filter((x) => x.proto === "icmp");
+    const ports = s.specs.filter((x) => x.proto !== "icmp");
+    // A FortiOS custom service is either TCP/UDP or ICMP, never both
+    if (icmp.length && ports.length) {
+      const a = { ...s, specs: ports };
+      const b = { ...s, specs: icmp };
+      ctx.customServices.set(name, a);
+      ctx.customServices.set(`${name}-icmp`, b);
+      return [name, `${name}-icmp`];
+    }
+    if (!ctx.customServices.has(name)) ctx.customServices.set(name, s);
+    return [name];
   }
 
-  generateRollback(
-    rule: NormalizedRule,
-    _zoneMappings: ZoneMapping[],
-  ): RollbackCommand {
+  protected wrapRules(blocks: string[]): string[] {
+    return ["config firewall policy", ...blocks, "end"];
+  }
+
+  protected renderObjects(ctx: GenContext): string[] {
+    const out: string[] = [];
+    if (ctx.addresses.size) {
+      out.push("config firewall address");
+      for (const a of ctx.addresses.values()) {
+        out.push(`    edit ${quote(a.name)}`);
+        switch (a.ref.kind) {
+          case "host":
+            out.push(`        set subnet ${a.ref.ip} 255.255.255.255`);
+            break;
+          case "subnet":
+            out.push(`        set subnet ${a.ref.ip} ${prefixToMask(a.ref.prefix)}`);
+            break;
+          case "range":
+            out.push(`        set type iprange`);
+            out.push(`        set start-ip ${a.ref.start}`);
+            out.push(`        set end-ip ${a.ref.end}`);
+            break;
+          case "fqdn":
+            out.push(`        set type fqdn`);
+            out.push(`        set fqdn ${quote(a.ref.fqdn)}`);
+            break;
+        }
+        out.push("    next");
+      }
+      out.push("end");
+    }
+    if (ctx.groups.size) {
+      out.push("config firewall addrgrp");
+      for (const g of ctx.groups.values()) {
+        out.push(`    edit ${quote(g.name)}`);
+        out.push(`        set member ${g.members.map(quote).join(" ")}`);
+        out.push("    next");
+      }
+      out.push("end");
+    }
+    if (ctx.customServices.size) {
+      out.push("config firewall service custom");
+      for (const [name, s] of ctx.customServices) {
+        out.push(`    edit ${quote(name)}`);
+        const icmp = s.specs.filter((x) => x.proto === "icmp");
+        if (icmp.length && icmp.length === s.specs.length) {
+          out.push(`        set protocol ICMP`);
+          if (icmp[0].icmpType !== undefined) out.push(`        set icmptype ${icmp[0].icmpType}`);
+        } else {
+          const tcp = s.specs.filter((x) => x.proto === "tcp").map((x) => x.ports);
+          const udp = s.specs.filter((x) => x.proto === "udp").map((x) => x.ports);
+          if (tcp.length) out.push(`        set tcp-portrange ${tcp.join(" ")}`);
+          if (udp.length) out.push(`        set udp-portrange ${udp.join(" ")}`);
+        }
+        out.push("    next");
+      }
+      out.push("end");
+    }
+    return out;
+  }
+
+  generateRollback(rule: NormalizedRule, _zoneMappings: ZoneMapping[]): RollbackCommand {
     return {
       position: rule.position,
       ruleName: rule.name,
       command: `config firewall policy\n    delete ${rule.position}\nend`,
-      explanation: `Delete migrated policy ${rule.position} ("${rule.name}") from FortiGate`,
+      explanation: `Delete migrated policy ${rule.position} ("${rule.name}") from the FortiGate`,
     };
-  }
-
-  private mapZone(
-    zone: string | undefined,
-    mappings: ZoneMapping[],
-  ): string | undefined {
-    if (!zone) return undefined;
-    const mapping = mappings.find(
-      (m) => m.sourceZone.toLowerCase() === zone.toLowerCase(),
-    );
-    return mapping?.targetZone || zone;
   }
 }

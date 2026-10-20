@@ -11,25 +11,14 @@ import { apiHandler } from "@/lib/apiHandler";
 import { validateConfig } from "@/lib/validation/ConfigValidator";
 import { logger } from "@/lib/logger";
 import { z } from "zod";
+import { SUPPORTED_VENDORS } from "@/lib/vendors";
 
 const validateSchema = z.object({
   config: z
     .string()
     .min(1)
     .max(20 * 1024 * 1024),
-  vendor: z.enum([
-    "PALO_ALTO",
-    "CISCO_ASA",
-    "CISCO_FTD",
-    "CHECKPOINT",
-    "FORTINET",
-    "JUNIPER_SRX",
-    "SOPHOS",
-    "SONICWALL",
-    "WATCHGUARD",
-    "PFSENSE",
-    "MIKROTIK",
-  ]),
+  vendor: z.enum(SUPPORTED_VENDORS),
 });
 
 type ValidateInput = z.infer<typeof validateSchema>;

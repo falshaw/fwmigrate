@@ -516,7 +516,7 @@ function extractRulesFromConfig(
   const rules: ExtractedRule[] = [];
   const lines = config.split("\n");
 
-  if (vendor === "CISCO_ASA" || vendor === "CISCO_FTD") {
+  if (vendor === "CISCO_ASA") {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (line.startsWith("access-list") && line.includes("extended")) {
@@ -765,7 +765,6 @@ export function validateConfig(
       vendorIssues = validatePaloAlto(config);
       break;
     case "CISCO_ASA":
-    case "CISCO_FTD":
       vendorIssues = validateCiscoASA(config);
       break;
     case "FORTINET":

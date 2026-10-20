@@ -163,9 +163,44 @@ export class PaloAltoParser implements IConfigParser {
       }
     }
 
+    // Service objects: <service><entry name><protocol><tcp><port>
+    const svcEntries = this.getNestedValue(
+      config,
+      "devices.entry.vsys.entry.service.entry",
+    ) as Record<string, unknown>[] | undefined;
+    if (Array.isArray(svcEntries)) {
+      for (const entry of svcEntries) {
+        const members: string[] = [];
+        for (const proto of ["tcp", "udp"]) {
+          const port = this.getNestedValue(entry, `protocol.${proto}.port`);
+          if (port !== undefined && port !== null && String(port) !== "")
+            members.push(`${proto}/${String(port).replace(/\s+/g, "")}`);
+        }
+        objects.push({
+          objectType: "service",
+          name: entry["@_name"] as string,
+          members,
+        });
+      }
+    }
+
+    const svcGrpEntries = this.getNestedValue(
+      config,
+      "devices.entry.vsys.entry.service-group.entry",
+    ) as Record<string, unknown>[] | undefined;
+    if (Array.isArray(svcGrpEntries)) {
+      for (const entry of svcGrpEntries) {
+        objects.push({
+          objectType: "service-group",
+          name: entry["@_name"] as string,
+          members: this.toArray(this.getNestedValue(entry, "members.member")),
+        });
+      }
+    }
+
     log.push({
       level: "info",
-      message: `Parsed ${objects.length} address objects from XML`,
+      message: `Parsed ${objects.length} address and service objects from XML`,
     });
     return objects;
   }
@@ -254,15 +289,40 @@ export class PaloAltoParser implements IConfigParser {
         continue;
       }
 
-      // set address <name> ip-netmask <value>
+      // set address <name> ip-netmask|ip-range|fqdn <value>
       const addrMatch = line.match(
-        /^set address "?([^"]+)"?\s+ip-netmask\s+(\S+)$/,
+        /^set address "?([^"]+?)"?\s+(?:ip-netmask|ip-range|fqdn)\s+(\S+)$/,
       );
       if (addrMatch) {
         objectData.set(addrMatch[1], {
           type: "address",
           members: [addrMatch[2]],
         });
+        continue;
+      }
+
+      // set service <name> protocol <tcp|udp> port <ports>
+      const svcMatch = line.match(
+        /^set service "?([^"]+?)"?\s+protocol\s+(tcp|udp)\s+port\s+(\S+)$/,
+      );
+      if (svcMatch) {
+        objectData.set(svcMatch[1], {
+          type: "service",
+          members: [`${svcMatch[2]}/${svcMatch[3]}`],
+        });
+        continue;
+      }
+
+      // set service-group <name> members <members>
+      const svcGrpMatch = line.match(
+        /^set service-group "?([^"]+?)"?\s+members\s+(.+)$/,
+      );
+      if (svcGrpMatch) {
+        const members = svcGrpMatch[2]
+          .split(/\s+/)
+          .map((v) => v.replace(/[\[\]"]/g, ""))
+          .filter(Boolean);
+        objectData.set(svcGrpMatch[1], { type: "service-group", members });
         continue;
       }
 
