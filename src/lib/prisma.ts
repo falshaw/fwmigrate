@@ -7,9 +7,10 @@
 import { PrismaClient } from "@/generated/prisma";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
+import { resolveDatabaseUrl } from "@/lib/database-url";
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL!,
+  connectionString: resolveDatabaseUrl(),
   max: 10,
   min: 2,
   idleTimeoutMillis: 30000,
