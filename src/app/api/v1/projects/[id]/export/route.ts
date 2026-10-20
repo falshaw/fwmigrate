@@ -9,6 +9,9 @@ import { apiHandler } from "@/lib/apiHandler";
 import prisma from "@/lib/prisma";
 import { notFound, badRequest } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { getGenerator } from "@/lib/generators/GeneratorFactory";
+import { toNormalizedRule } from "@/lib/mappers/ruleMapper";
+import type { FirewallVendor, NormalizedObject } from "@/lib/parsers/types";
 
 /**
  * GET /api/v1/projects/[id]/export?type=config|plan|report
@@ -26,23 +29,14 @@ export const GET = apiHandler(async ({ params, organizationId, req }) => {
         where: {
           reviewStatus: { in: ["APPROVED", "MODIFIED"] },
         },
-        include: {
-          normalizedRule: {
-            select: {
-              position: true,
-              name: true,
-              sources: true,
-              destinations: true,
-              services: true,
-              action: true,
-            },
-          },
-        },
+        include: { normalizedRule: true },
         orderBy: {
           normalizedRule: { position: "asc" },
         },
       },
       analysisResults: true,
+      normalizedObjects: true,
+      zoneMappings: true,
     },
   });
 
@@ -59,8 +53,32 @@ export const GET = apiHandler(async ({ params, organizationId, req }) => {
   const timestamp = new Date().toISOString();
   const ruleCount = project.translatedRules.length;
 
+  // Regenerate the approved subset with the generator so the export is a
+  // complete config: the objects these rules reference, then the rules
+  // (manual overrides replace the generated block of their rule).
+  const generator = getGenerator(project.targetVendor as FirewallVendor);
+  const rules = project.translatedRules.map((t) => toNormalizedRule(t.normalizedRule));
+  const objects: NormalizedObject[] = project.normalizedObjects.map((o) => ({
+    objectType: o.objectType as NormalizedObject["objectType"],
+    name: o.name,
+    members: o.members as string[],
+    rawVendorData: o.rawVendorData as Record<string, unknown> | undefined,
+  }));
+  const zoneMappings = project.zoneMappings.map((z) => ({
+    sourceZone: z.sourceZone,
+    targetZone: z.targetZone,
+  }));
+  const overrides: Record<number, string> = {};
+  for (const t of project.translatedRules) {
+    if (t.reviewStatus === "MODIFIED" && t.manualOverride)
+      overrides[t.normalizedRule.position] = t.manualOverride;
+  }
+  const rollbacks = new Map(
+    rules.map((r) => [r.position, generator.generateRollback(r, zoneMappings, objects).command]),
+  );
+
   if (exportType === "plan") {
-    const plan = generateMigrationPlan(project, timestamp);
+    const plan = generateMigrationPlan(project, timestamp, rollbacks);
     const filename = `${project.name.replace(/[^a-zA-Z0-9_-]/g, "_")}_migration_plan.md`;
 
     logger.info("Migration plan exported", {
@@ -96,31 +114,20 @@ export const GET = apiHandler(async ({ params, organizationId, req }) => {
   }
 
   // Default: export config
+  const generated = await generator.generate(rules, objects, zoneMappings, { overrides });
+  const c = generator.commentPrefix;
   const header = [
-    `! =============================================================================`,
-    `! FW Migrate Export -- ${project.name}`,
-    `! Source: ${project.sourceVendor} -> Target: ${project.targetVendor}`,
-    `! Rules exported: ${ruleCount}`,
-    `! Generated: ${timestamp}`,
-    `! =============================================================================`,
+    `${c} =============================================================================`,
+    `${c} FW Migrate export -- ${project.name}`,
+    `${c} Source: ${project.sourceVendor} -> Target: ${project.targetVendor}`,
+    `${c} Rules exported (approved or modified): ${ruleCount}`,
+    `${c} Generated: ${timestamp}`,
+    `${c} Review every line before applying it to a device.`,
+    `${c} =============================================================================`,
     ``,
   ].join("\n");
 
-  const configBlocks: string[] = [];
-
-  for (const translated of project.translatedRules) {
-    const ruleName = translated.normalizedRule?.name ?? "unnamed";
-    const position = translated.normalizedRule?.position ?? 0;
-
-    const config =
-      translated.reviewStatus === "MODIFIED" && translated.manualOverride
-        ? translated.manualOverride
-        : translated.targetConfig;
-
-    configBlocks.push(`! --- Rule ${position}: ${ruleName} ---`, config, ``);
-  }
-
-  const fullConfig = header + configBlocks.join("\n");
+  const fullConfig = header + generated.config + "\n";
 
   await prisma.migrationProject.update({
     where: { id: params.id },
@@ -142,29 +149,6 @@ export const GET = apiHandler(async ({ params, organizationId, req }) => {
     },
   });
 });
-
-function generateRollbackCommand(
-  vendor: string,
-  ruleName: string,
-  position: number,
-): string {
-  const safeName = ruleName.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 63);
-  switch (vendor) {
-    case "PALO_ALTO":
-      return `delete rulebase security rules "${safeName}"`;
-    case "CISCO_ASA":
-    case "CISCO_FTD":
-      return `no access-list OUTSIDE_IN extended permit ip any any\n! Replace with exact ACE from the forward config above`;
-    case "FORTINET":
-      return `config firewall policy\n    delete ${position}\nend`;
-    case "CHECKPOINT":
-      return `mgmt_cli delete access-rule layer "Network" name "${safeName}"`;
-    case "JUNIPER_SRX":
-      return `delete security policies from-zone untrust to-zone trust policy ${safeName}`;
-    default:
-      return `# Remove rule "${safeName}" (position ${position}) using vendor CLI`;
-  }
-}
 
 interface ProjectWithRules {
   name: string;
@@ -197,6 +181,7 @@ interface ProjectWithRules {
 function generateMigrationPlan(
   project: ProjectWithRules,
   timestamp: string,
+  rollbacks: Map<number, string>,
 ): string {
   const rules = project.translatedRules;
   const issues = project.analysisResults;
@@ -384,7 +369,7 @@ function generateMigrationPlan(
     const name = rule?.name ?? "unnamed";
     sections.push(`**Rule ${pos}: ${name}**`);
     sections.push("```");
-    sections.push(generateRollbackCommand(project.targetVendor, name, pos));
+    sections.push(rollbacks.get(pos) ?? `# Remove rule "${name}" manually`);
     sections.push("```");
     sections.push(``);
   }
