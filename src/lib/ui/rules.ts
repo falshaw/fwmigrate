@@ -8,6 +8,16 @@
  */
 
 /** The rules API caps `limit` at 200. */
+
+export class RulesLoadError extends Error {
+  constructor(
+    public page: number,
+    public status: number,
+  ) {
+    super(`Failed to load rules (page ${page}, HTTP ${status})`);
+  }
+}
+
 export const RULES_PAGE_SIZE = 200;
 
 type FetchLike = (url: string) => Promise<{
@@ -34,7 +44,7 @@ export async function fetchAllRules<T>(
     const res = await fetchFn(
       `/api/v1/projects/${projectId}/rules?page=${page}&limit=${RULES_PAGE_SIZE}`,
     );
-    if (!res.ok) throw new Error(`Failed to load rules (page ${page})`);
+    if (!res.ok) throw new RulesLoadError(page, (res as { status?: number }).status ?? 0);
     const data = (await res.json()) as RulesPage<T>;
     const rules = data.rules ?? [];
     all.push(...rules);

@@ -8,6 +8,7 @@ import { CodeBlock } from "@/components/CodeBlock";
 import { vendorShort } from "@/lib/vendors";
 import {
   fetchAllRules,
+  RulesLoadError,
   ruleState,
   RULE_STATE_BADGE,
   REVIEW_STATUS_BADGE,
@@ -77,6 +78,8 @@ export default function ReviewPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
+  const [attempt, setAttempt] = useState(0);
+
   useEffect(() => {
     fetchAllRules<NormalizedRuleWithTranslation>(projectId)
       .then((all) => {
@@ -90,11 +93,15 @@ export default function ReviewPage() {
         setSelectedId(first?.id ?? null);
         setLoading(false);
       })
-      .catch(() => {
-        setLoadError("Could not load the rules.");
+      .catch((e) => {
+        setLoadError(
+          e instanceof RulesLoadError && e.status === 429
+            ? "Could not load the rules: too many requests in a short time. Wait a minute and try again."
+            : "Could not load the rules.",
+        );
         setLoading(false);
       });
-  }, [projectId]);
+  }, [projectId, attempt]);
 
   async function reviewRule(normalizedRuleId: string, status: string) {
     setSaving(true);
@@ -154,7 +161,7 @@ export default function ReviewPage() {
           <button
             onClick={() => router.push(`/dashboard/projects/${projectId}/export`)}
             className="btn btn-primary btn-sm"
-            disabled={reviewed < total}
+            disabled={loading || !!loadError || total === 0 || reviewed < total}
             title={reviewed < total ? "Review every rule before export" : undefined}
           >
             Export
@@ -184,8 +191,19 @@ export default function ReviewPage() {
           <div className="skeleton h-80" />
         </div>
       ) : loadError ? (
-        <div className="alert alert-error" role="alert">
-          {loadError}
+        <div className="alert alert-error items-center justify-between" role="alert">
+          <span>{loadError}</span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setLoadError("");
+              setLoading(true);
+              setAttempt((n) => n + 1);
+            }}
+          >
+            Try again
+          </button>
         </div>
       ) : total === 0 ? (
         <div className="card p-8 text-center text-[13px] text-ink-65">
