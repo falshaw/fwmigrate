@@ -157,6 +157,7 @@ export default function TranslatePage() {
             {typeof explain.total === "number" &&
               ` - ${explain.done ?? 0}/${explain.total} done${explain.failed ? `, ${explain.failed} failed` : ""}${explain.skipped ? `, ${explain.skipped} over the limit` : ""}`}
             {explain.status === "running" && " - you can start reviewing now"}
+            {explain.failed && explain.lastError ? ` (last error: ${explain.lastError})` : ""}
           </p>
         )}
       </div>
