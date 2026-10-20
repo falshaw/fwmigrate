@@ -17,6 +17,12 @@ interface ApiHandlerOptions<T> {
   roles?: Role[];
   rateLimit?: RateLimitConfig | false;
   rateLimitPrefix?: string;
+  /**
+   * "client" (default): counted per client address before authentication.
+   * "user": counted per signed-in user after authentication, for routes a
+   * reviewer clicks quickly (unauthenticated calls are still rejected first).
+   */
+  rateLimitBy?: "client" | "user";
 }
 
 interface UserContext {
@@ -48,6 +54,7 @@ export function apiHandler<T = unknown>(
     roles,
     rateLimit = RATE_LIMITS.api,
     rateLimitPrefix = "api",
+    rateLimitBy = "client",
   } = options;
 
   return async (
@@ -55,7 +62,7 @@ export function apiHandler<T = unknown>(
     context?: { params?: Promise<Record<string, string>> },
   ): Promise<NextResponse> => {
     try {
-      if (rateLimit !== false) {
+      if (rateLimit !== false && rateLimitBy === "client") {
         const limited = await applyRateLimit(req, rateLimit, rateLimitPrefix);
         if (limited) return limited;
       }
@@ -70,6 +77,17 @@ export function apiHandler<T = unknown>(
 
         if (roles && !roles.includes(user.role)) {
           return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+      }
+
+      if (rateLimit !== false && rateLimitBy === "user") {
+        if (!user) {
+          // Never skip limiting: fall back to the client address
+          const limited = await applyRateLimit(req, rateLimit, rateLimitPrefix);
+          if (limited) return limited;
+        } else {
+          const limited = await applyRateLimit(req, rateLimit, rateLimitPrefix, `user:${user.id}`);
+          if (limited) return limited;
         }
       }
 
