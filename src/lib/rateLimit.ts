@@ -48,9 +48,10 @@ export function checkRateLimit(
   req: NextRequest,
   config: RateLimitConfig,
   prefix: string = "global",
+  subject?: string,
 ): { limited: boolean; remaining: number; resetAt: number } {
   cleanupExpiredEntries();
-  const key = `${prefix}:${getClientId(req)}`;
+  const key = `${prefix}:${subject ?? getClientId(req)}`;
   const now = Date.now();
   const entry = rateLimitStore.get(key);
 
@@ -77,6 +78,8 @@ export function checkRateLimit(
 export const RATE_LIMITS = {
   auth: { interval: 60 * 1000, limit: 10 },
   api: { interval: 60 * 1000, limit: 100 },
+  /** Review decisions, counted per signed-in user: 10 per second sustained for a minute */
+  review: { interval: 60 * 1000, limit: 600 },
   expensive: { interval: 60 * 1000, limit: 10 },
   upload: { interval: 60 * 1000, limit: 5 },
 };
@@ -85,8 +88,9 @@ export async function applyRateLimit(
   req: NextRequest,
   config: RateLimitConfig = RATE_LIMITS.api,
   prefix: string = "api",
+  subject?: string,
 ): Promise<NextResponse | null> {
-  const { limited, resetAt } = checkRateLimit(req, config, prefix);
+  const { limited, resetAt } = checkRateLimit(req, config, prefix, subject);
   if (limited) {
     const retryAfter = Math.ceil((resetAt - Date.now()) / 1000);
     return NextResponse.json(
