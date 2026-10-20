@@ -54,7 +54,7 @@ export function ConfirmDialog({
         // A click on the backdrop lands on the dialog element itself
         if (e.target === ref.current && !busy) onCancel();
       }}
-      className="confirm-dialog glass m-auto w-[calc(100%-32px)] max-w-md p-0 text-ink"
+      className="confirm-dialog glass m-auto w-[calc(100%-32px)] max-w-md p-0 text-left text-ink"
     >
       <div className="p-5 sm:p-6">
         <h2 id={titleId} className="!text-lg">

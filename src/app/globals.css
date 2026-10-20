@@ -583,7 +583,7 @@
 
   /* Confirm dialog: glass panel over a dimmed, blurred page */
   .confirm-dialog {
-    background: color-mix(in srgb, var(--canvas) 86%, transparent);
+    background: color-mix(in srgb, var(--canvas) 95%, transparent);
     max-height: calc(100dvh - 32px);
   }
   .confirm-dialog::backdrop {
