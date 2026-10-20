@@ -18,6 +18,7 @@ import {
 import { VENDOR_LIST } from "@/lib/vendors";
 import { PageHeader } from "@/components/ProjectHeader";
 import { projectStatusBadge } from "@/lib/ui/rules";
+import { pushBlockReason } from "@/lib/ui/change-manager";
 
 interface ConnectionStatus {
   configured: boolean;
@@ -72,6 +73,7 @@ export default function IntegratePage() {
   const [showDescriptionFor, setShowDescriptionFor] = useState<string | null>(
     null,
   );
+  const [pushError, setPushError] = useState("");
 
   useEffect(() => {
     Promise.all([
@@ -80,12 +82,9 @@ export default function IntegratePage() {
     ])
       .then(([statusData, projectsData]) => {
         setStatus(statusData);
-        // Filter to translated/approved/exported projects
-        const eligible = (projectsData.projects || []).filter(
-          (p: Project) =>
-            p.status === "APPROVED" ||
-            p.status === "EXPORTED" ||
-            p.status === "TRANSLATED",
+        // Translated projects: pushable once every rule is reviewed
+        const eligible = (projectsData.projects || []).filter((p: Project) =>
+          ["TRANSLATED", "REVIEWING", "APPROVED", "EXPORTED"].includes(p.status),
         );
         setProjects(eligible);
         setLoading(false);
@@ -109,6 +108,7 @@ export default function IntegratePage() {
   async function handlePush(projectId: string) {
     setPushing(projectId);
     setPushResult(null);
+    setPushError("");
     setShowDescriptionFor(null);
     try {
       const res = await fetch("/api/v1/integrate/change-manager", {
@@ -119,15 +119,15 @@ export default function IntegratePage() {
           description: pushDescription || undefined,
         }),
       });
-      const data = await res.json();
-      if (data.error) {
-        alert(data.detail || data.error);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        setPushError(data.detail || data.error || "The push failed.");
       } else {
         setPushResult(data);
       }
       setPushDescription("");
     } catch {
-      alert("Failed to push to Change Manager");
+      setPushError("The push failed: Change Manager did not answer.");
     } finally {
       setPushing(null);
     }
@@ -142,7 +142,7 @@ export default function IntegratePage() {
   }
 
   const isConnected = status?.connection?.connected ?? false;
-  const changeManagerUrl = status?.apiUrl || "http://localhost:3003";
+  const changeManagerUrl = status?.apiUrl ?? "";
 
   return (
     <div>
@@ -243,12 +243,20 @@ export default function IntegratePage() {
                 Set <code className="font-mono">CHANGE_MANAGER_API_URL</code>{" "}
                 and optionally{" "}
                 <code className="font-mono">CHANGE_MANAGER_API_KEY</code> in
-                your .env file. Default: http://localhost:3003
+                your .env file, then recreate the app container. Any system with{" "}
+                <code className="font-mono">GET /api/health</code> and{" "}
+                <code className="font-mono">POST /api/rules/import</code> works.
               </p>
             </div>
           </div>
         )}
       </div>
+
+      {pushError && (
+        <div className="alert alert-error mb-4" role="alert">
+          {pushError}
+        </div>
+      )}
 
       {/* Push Results */}
       {pushResult && (
@@ -358,8 +366,9 @@ export default function IntegratePage() {
         ) : (
           <div className="space-y-3">
             {projects.map((project) => {
-              const isTranslatedOnly = project.status === "TRANSLATED";
-              const canPush = isConnected && !isTranslatedOnly;
+              const blocked = pushBlockReason(project.status, status);
+              const canPush = !blocked;
+              const reasonId = `push-reason-${project.id}`;
 
               return (
                 <div
@@ -389,9 +398,9 @@ export default function IntegratePage() {
                     <div className="flex items-center gap-2 shrink-0">
                       {showDescriptionFor !== project.id && (
                         <>
-                          {isTranslatedOnly && (
-                            <span className="text-[11px] text-amber">
-                              Approve rules first
+                          {blocked && (
+                            <span id={reasonId} className="text-[11px] text-amber">
+                              {blocked}
                             </span>
                           )}
                           <button
@@ -401,6 +410,7 @@ export default function IntegratePage() {
                               }
                             }}
                             disabled={pushing === project.id || !canPush}
+                            aria-describedby={blocked ? reasonId : undefined}
                             className="btn btn-primary btn-sm"
                           >
                             {pushing === project.id ? (
@@ -418,11 +428,15 @@ export default function IntegratePage() {
                   {/* Description input */}
                   {showDescriptionFor === project.id && (
                     <div className="px-4 pb-3 border-t border-line-2 pt-3">
-                      <label className="mb-1.5 block text-[13px] font-semibold">
-                        Change Description (optional)
+                      <label
+                        htmlFor={`push-desc-${project.id}`}
+                        className="mb-1.5 block text-[13px] font-semibold"
+                      >
+                        Change description (optional)
                       </label>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         <input
+                          id={`push-desc-${project.id}`}
                           type="text"
                           value={pushDescription}
                           onChange={(e) => setPushDescription(e.target.value)}

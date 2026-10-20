@@ -12,6 +12,7 @@ import { apiHandler } from "@/lib/apiHandler";
 import prisma from "@/lib/prisma";
 import { notFound, badRequest } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { getChangeManagerConfig } from "@/lib/change-manager-integration";
 import { z } from "zod";
 
 const integrationSchema = z.object({
@@ -46,8 +47,13 @@ interface ChangeManagerRule {
 
 export const POST = apiHandler<IntegrationInput>(
   async ({ body, organizationId }) => {
-    const changeManagerApiUrl =
-      process.env.CHANGE_MANAGER_API_URL || "http://localhost:3003";
+    const changeManagerApiUrl = getChangeManagerConfig().apiUrl;
+    if (!changeManagerApiUrl) {
+      return NextResponse.json(
+        { error: "Change Manager is not configured (CHANGE_MANAGER_API_URL is not set)" },
+        { status: 503 },
+      );
+    }
 
     const project = await prisma.migrationProject.findUnique({
       where: { id: body.projectId },

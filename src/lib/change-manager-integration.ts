@@ -59,7 +59,8 @@ export interface ChangeManagerIntegrationResult {
  */
 export function getChangeManagerConfig(): ChangeManagerConnectionConfig {
   return {
-    apiUrl: process.env.CHANGE_MANAGER_API_URL || "http://localhost:3003",
+    // No default: an unset URL means the integration is off
+    apiUrl: (process.env.CHANGE_MANAGER_API_URL || "").replace(/\/+$/, ""),
     apiKey: process.env.CHANGE_MANAGER_API_KEY || undefined,
   };
 }
@@ -75,6 +76,9 @@ export async function testChangeManagerConnection(): Promise<{
 }> {
   const config = getChangeManagerConfig();
   const start = Date.now();
+  if (!config.apiUrl) {
+    return { connected: false, latencyMs: 0, error: "CHANGE_MANAGER_API_URL is not set" };
+  }
 
   try {
     const headers: Record<string, string> = {
