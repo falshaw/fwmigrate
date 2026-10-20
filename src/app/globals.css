@@ -580,6 +580,36 @@
     border-radius: 18px;
     animation: pulse 1.5s ease-in-out infinite;
   }
+
+  /* Confirm dialog: glass panel over a dimmed, blurred page */
+  .confirm-dialog {
+    background: color-mix(in srgb, var(--canvas) 86%, transparent);
+    max-height: calc(100dvh - 32px);
+  }
+  .confirm-dialog::backdrop {
+    background: rgba(10, 15, 25, 0.38);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+  }
+
+  /* Drop zone for config files */
+  .dropzone {
+    border: 1.5px dashed var(--line);
+    border-radius: 14px;
+    background: var(--g-bg2);
+    transition:
+      border-color 0.15s,
+      background 0.15s;
+  }
+  .dropzone:hover,
+  .dropzone.drag {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .dropzone:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
 }
 
 @keyframes pulse {
