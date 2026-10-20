@@ -204,6 +204,7 @@ export const POST = apiHandler(
                 generator.generateRule(
                   parseResult.rules.find((r) => r.position === nr.position)!,
                   [],
+                  parseResult.objects,
                 ),
               targetVendor: targetVendor as PrismaFirewallVendor,
               explanation:
@@ -212,7 +213,7 @@ export const POST = apiHandler(
                 ruleConfig?.warnings && ruleConfig.warnings.length > 0
                   ? (ruleConfig.warnings as object)
                   : Prisma.JsonNull,
-              confidence: 0.85,
+              confidence: ruleConfig?.confidence ?? 0.5,
             };
           });
 
