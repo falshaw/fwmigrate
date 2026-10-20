@@ -11,10 +11,9 @@ import {
   Plus,
   ChevronRight,
   FolderOpen,
-  FileText,
   Settings,
-  Cpu,
 } from "lucide-react";
+import { VENDOR_LIST, VENDOR_COUNT } from "@/lib/vendors";
 
 interface Project {
   id: string;
@@ -37,23 +36,13 @@ interface DashboardData {
   activeCount: number;
   completedCount: number;
   totalRules: number;
-  vendorsUsed: number;
-  successRate: number;
 }
 
-const vendorLabels: Record<string, string> = {
-  PALO_ALTO: "Palo Alto",
-  CISCO_ASA: "Cisco ASA",
-  CISCO_FTD: "Cisco FTD",
-  CHECKPOINT: "Check Point",
-  FORTINET: "Fortinet",
-  JUNIPER_SRX: "Juniper SRX",
-  SOPHOS: "Sophos XG/SFOS",
-  SONICWALL: "SonicWall",
-  WATCHGUARD: "WatchGuard",
-  PFSENSE: "pfSense",
-  MIKROTIK: "MikroTik",
-};
+const VENDOR_COLORS = ["#f97316", "#3b82f6", "#10b981", "#ef4444", "#a78bfa"];
+
+const vendorLabels: Record<string, string> = Object.fromEntries(
+  VENDOR_LIST.map((v) => [v.id, v.label]),
+);
 
 const STATUS_CONFIG: Record<
   string,
@@ -169,15 +158,6 @@ export default function DashboardPage() {
           (sum, p) => sum + (p.ruleCount || 0),
           0,
         );
-        const vendorSet = new Set<string>();
-        projects.forEach((p) => {
-          vendorSet.add(p.sourceVendor);
-          vendorSet.add(p.targetVendor);
-        });
-        const successRate =
-          projects.length > 0
-            ? Math.round((completedCount / projects.length) * 100)
-            : 0;
 
         setData({
           projects,
@@ -185,8 +165,6 @@ export default function DashboardPage() {
           activeCount,
           completedCount,
           totalRules,
-          vendorsUsed: vendorSet.size,
-          successRate,
         });
         setLoading(false);
       })
@@ -197,8 +175,6 @@ export default function DashboardPage() {
           activeCount: 0,
           completedCount: 0,
           totalRules: 0,
-          vendorsUsed: 0,
-          successRate: 0,
         });
         setLoading(false);
       });
@@ -235,10 +211,9 @@ export default function DashboardPage() {
                 </h1>
                 <p className="text-sm text-white/35 mt-1 flex items-center gap-2">
                   <Activity className="w-3.5 h-3.5" />
-                  AI-Powered Firewall Migration
+                  AI-assisted firewall migration
                   <span className="text-white/20">
-                    &middot; {d.vendorsUsed} Vendor
-                    {d.vendorsUsed !== 1 ? "s" : ""}
+                    &middot; {VENDOR_COUNT} supported vendors
                   </span>
                 </p>
               </div>
@@ -278,21 +253,20 @@ export default function DashboardPage() {
           />
           <StatCell
             icon={<Layers className="w-4 h-4" />}
-            label="Rules Translated"
+            label="Rules Parsed"
             value={`${d.totalRules}`}
             color="#a78bfa"
           />
           <StatCell
             icon={<ArrowRightLeft className="w-4 h-4" />}
             label="Vendors Supported"
-            value="6"
+            value={`${VENDOR_COUNT}`}
             color="#f97316"
           />
           <StatCell
             icon={<CheckCircle2 className="w-4 h-4" />}
-            label="Success Rate"
-            value={d.totalMigrations > 0 ? `${d.successRate}%` : "--"}
-            sub={d.totalMigrations > 0 ? undefined : "no data"}
+            label="Completed"
+            value={`${d.completedCount}`}
             color="#10b981"
           />
         </div>
@@ -433,20 +407,6 @@ export default function DashboardPage() {
                   from: "#3b82f6",
                   to: "#2563eb",
                 },
-                {
-                  href: "/dashboard",
-                  label: "Export History",
-                  icon: <FileText className="w-4 h-4" />,
-                  from: "#10b981",
-                  to: "#059669",
-                },
-                {
-                  href: "/dashboard",
-                  label: "AI Assistant",
-                  icon: <Cpu className="w-4 h-4" />,
-                  from: "#a78bfa",
-                  to: "#7c3aed",
-                },
               ].map((item) => (
                 <Link
                   key={item.label}
@@ -484,13 +444,7 @@ export default function DashboardPage() {
               </h3>
             </div>
             <div className="p-4 space-y-1">
-              {[
-                { name: "Palo Alto", color: "#f97316" },
-                { name: "Cisco ASA / FTD", color: "#3b82f6" },
-                { name: "Check Point", color: "#10b981" },
-                { name: "Fortinet", color: "#ef4444" },
-                { name: "Juniper SRX", color: "#a78bfa" },
-              ].map((vendor) => (
+              {VENDOR_LIST.map((v, i) => ({ name: v.label, color: VENDOR_COLORS[i % VENDOR_COLORS.length] })).map((vendor) => (
                 <div
                   key={vendor.name}
                   className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white/[0.02] transition-colors"

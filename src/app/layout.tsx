@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "FW Migrate — AI-Powered Firewall Migration",
+  title: "FW Migrate — AI-assisted firewall rule migration",
   description:
-    "Universal firewall migration platform for security consultants. Parse, analyze, translate, and export firewall configs across vendors.",
+    "Parse, analyse, translate, review and export firewall rule bases between Palo Alto, Cisco ASA, Check Point, Fortinet and Juniper SRX.",
 };
 
 export default function RootLayout({

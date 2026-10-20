@@ -16,6 +16,7 @@ import {
   Shield,
   AlertTriangle,
 } from "lucide-react";
+import { VENDOR_LIST } from "@/lib/vendors";
 
 interface ConnectionStatus {
   configured: boolean;
@@ -55,19 +56,9 @@ interface PushResult {
   changeManagerUrl?: string;
 }
 
-const vendorLabels: Record<string, string> = {
-  PALO_ALTO: "Palo Alto",
-  CISCO_ASA: "Cisco ASA",
-  CISCO_FTD: "Cisco FTD",
-  CHECKPOINT: "Check Point",
-  FORTINET: "Fortinet",
-  JUNIPER_SRX: "Juniper SRX",
-  SOPHOS: "Sophos",
-  SONICWALL: "SonicWall",
-  WATCHGUARD: "WatchGuard",
-  PFSENSE: "pfSense",
-  MIKROTIK: "MikroTik",
-};
+const vendorLabels: Record<string, string> = Object.fromEntries(
+  VENDOR_LIST.map((v) => [v.id, v.label]),
+);
 
 export default function IntegratePage() {
   const [status, setStatus] = useState<ConnectionStatus | null>(null);
