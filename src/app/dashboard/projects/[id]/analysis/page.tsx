@@ -30,6 +30,7 @@ export default function AnalysisPage() {
   const [ruleCount, setRuleCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
+  const [ran, setRan] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -61,6 +62,7 @@ export default function AnalysisPage() {
         setResults(data.results || []);
         setRuleCount(data.ruleCount || 0);
       }
+      setRan(true);
     } else {
       const data = await res.json().catch(() => ({}));
       setError(data.detail || data.error || "Analysis failed");
@@ -102,9 +104,10 @@ export default function AnalysisPage() {
           <div className="skeleton h-24" />
         </div>
       ) : results.length === 0 ? (
-        <div className="card p-8 text-center text-[13px] text-ink-65">
-          No analysis results yet. Run the analysis to find shadowed, unused and over-permissive
-          rules.
+        <div className="card p-8 text-center text-[13px] text-ink-65" role="status">
+          {ran
+            ? `No issues found in ${ruleCount} rules: nothing shadowed, unused or over-permissive.`
+            : "No analysis results yet. Run the analysis to find shadowed, unused and over-permissive rules."}
         </div>
       ) : (
         <div className="card overflow-hidden">

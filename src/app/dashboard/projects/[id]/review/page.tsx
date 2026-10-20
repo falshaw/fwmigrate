@@ -164,7 +164,7 @@ export default function ReviewPage() {
       )}
 
       {loading ? (
-        <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]" aria-busy="true">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[300px_minmax(0,1fr)]" aria-busy="true">
           <div className="skeleton h-80" />
           <div className="skeleton h-80" />
         </div>
@@ -177,7 +177,7 @@ export default function ReviewPage() {
           No translated rules yet. Translate the project first.
         </div>
       ) : (
-        <div className="grid items-start gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
           <div className="glass !rounded-[18px] overflow-hidden">
             <div className="flex justify-between border-b border-line px-4 py-3">
               <b>{total} rules</b>
@@ -246,7 +246,7 @@ function RuleDetail({
   const stateLabel = { risk: "Risky rule", flag: "Needs review", ok: "Clean" }[state];
 
   return (
-    <section className="card grid min-w-0 gap-4 p-5" aria-label={`Rule ${rule.name}`}>
+    <section className="card grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 p-4 sm:p-5" aria-label={`Rule ${rule.name}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h2 className="break-all font-mono !text-[15px]">
@@ -277,7 +277,7 @@ function RuleDetail({
         </div>
       ))}
 
-      <div className="grid gap-3 xl:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 xl:grid-cols-2">
         <CodeBlock label={`Source · ${src}`} code={sourceText(rule, src)} />
         <CodeBlock label={`Target · ${tgt}`} code={t.targetConfig} />
       </div>

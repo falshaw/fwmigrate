@@ -21,7 +21,7 @@ export default async function DashboardLayout({
           name={session.user.name ?? ""}
           email={session.user.email ?? ""}
         />
-        <main className="glass min-w-0 flex-1 p-[18px] sm:px-7 sm:pt-[26px] sm:pb-7">
+        <main className="glass w-full min-w-0 flex-1 p-[18px] sm:px-7 sm:pt-[26px] sm:pb-7">
           {children}
         </main>
       </div>
