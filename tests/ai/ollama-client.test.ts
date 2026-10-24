@@ -58,3 +58,43 @@ describe("ollamaGenerate", () => {
     await expect(ollamaGenerate("explain")).rejects.toThrow(/404/);
   });
 });
+
+describe("withModelBatch", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.LLM_PROVIDER;
+  });
+
+  const releases = (fetchMock: ReturnType<typeof vi.fn>) =>
+    fetchMock.mock.calls.filter((c) => JSON.parse(String((c[1] as RequestInit).body)).keep_alive === 0).length;
+
+  it("unloads the model once, after the last of overlapping batches", async () => {
+    const fetchMock = vi.fn(async () => new Response("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+    const { withModelBatch } = await loadClient();
+
+    let finishFirst!: () => void;
+    const first = withModelBatch(() => new Promise<void>((r) => (finishFirst = r)));
+    await withModelBatch(async () => {});
+    expect(releases(fetchMock)).toBe(0);
+
+    finishFirst();
+    await first;
+    expect(releases(fetchMock)).toBe(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("http://ollama.test/api/generate");
+  });
+
+  it("releases after a failed batch and never without an Ollama provider", async () => {
+    const fetchMock = vi.fn(async () => new Response("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+    const { withModelBatch } = await loadClient();
+    await expect(withModelBatch(async () => Promise.reject(new Error("boom")))).rejects.toThrow("boom");
+    expect(releases(fetchMock)).toBe(1);
+
+    process.env.LLM_PROVIDER = "none";
+    vi.resetModules();
+    const none = await import("../../src/lib/ai/OllamaClient");
+    await none.withModelBatch(async () => {});
+    expect(releases(fetchMock)).toBe(1);
+  });
+});
