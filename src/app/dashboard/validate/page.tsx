@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ShieldCheck,
@@ -66,6 +66,7 @@ interface StoredValidation {
 type TabMode = "raw" | "project";
 
 export default function ValidatePage() {
+  const fileInput = useRef<HTMLInputElement>(null);
   const [tab, setTab] = useState<TabMode>("raw");
 
   // Raw config validation state
@@ -212,7 +213,7 @@ export default function ValidatePage() {
           }`}
         >
           <FileText className="w-4 h-4 inline mr-1.5" />
-          Raw Config
+          Raw config
         </button>
         <button
           onClick={() => {
@@ -226,15 +227,15 @@ export default function ValidatePage() {
           }`}
         >
           <FolderOpen className="w-4 h-4 inline mr-1.5" />
-          Project Validation
+          Project validation
         </button>
       </div>
 
       {/* Raw Config Tab */}
       {tab === "raw" && (
         <div className="card p-5 mb-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-            <div className="md:col-span-1">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+            <div className="md:col-span-2">
               <label htmlFor="validate-vendor" className="mb-1.5 block text-[13px] font-semibold">
                 Vendor
               </label>
@@ -260,6 +261,7 @@ export default function ValidatePage() {
                 Config file
               </label>
               <input
+                ref={fileInput}
                 id="validate-file"
                 type="file"
                 accept={CONFIG_FILE_ACCEPT}
@@ -293,8 +295,12 @@ export default function ValidatePage() {
             id="validate-config"
             spellCheck={false}
             value={config}
-            onChange={(e) => setConfig(e.target.value)}
-            placeholder="Paste firewall configuration here..."
+            onChange={(e) => {
+              setConfig(e.target.value);
+              // The text no longer is the chosen file: stop showing its name
+              if (fileInput.current) fileInput.current.value = "";
+            }}
+            placeholder="Paste firewall configuration here…"
             rows={12}
             className="code"
           />
@@ -421,7 +427,7 @@ export default function ValidatePage() {
             )}
             <div>
               <h2 className="!text-base">
-                {activeResult.valid ? "Validation Passed" : "Validation Failed"}
+                {activeResult.valid ? "Validation passed" : "Validation failed"}
               </h2>
               {activeResult.projectName && (
                 <p className="text-xs text-ink-65">

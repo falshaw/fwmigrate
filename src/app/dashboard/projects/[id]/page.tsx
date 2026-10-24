@@ -16,6 +16,7 @@ import { StepPills } from "@/components/ProjectHeader";
 import { projectStatusBadge } from "@/lib/ui/rules";
 import { pushBlockReason, type ChangeManagerStatus } from "@/lib/ui/change-manager";
 import { DeleteProjectButton } from "@/components/DeleteProjectButton";
+import { ProjectHistory } from "@/components/ProjectHistory";
 
 interface Project {
   id: string;
@@ -94,25 +95,13 @@ export default function ProjectOverviewPage() {
     setValidation(null);
     setValidateError("");
     try {
-      // Fetch the generated config, then validate it
-      const exportRes = await fetch(
-        `/api/v1/projects/${project.id}/export?type=config`,
-      );
-      if (!exportRes.ok) {
+      // Validates the config the export would produce, without exporting it
+      const valRes = await fetch(`/api/v1/validate/${project.id}`, { method: "POST" });
+      if (valRes.status === 400) {
         setValidateError("No config to validate yet: translate the project first.");
         setValidating(false);
         return;
       }
-      const configText = await exportRes.text();
-
-      const valRes = await fetch("/api/v1/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          config: configText,
-          vendor: project.targetVendor,
-        }),
-      });
       if (!valRes.ok) throw new Error("validate failed");
       const data = await valRes.json();
       setValidation(data);
@@ -347,6 +336,8 @@ export default function ProjectOverviewPage() {
           </ul>
         </div>
       )}
+
+      <ProjectHistory projectId={project.id} refreshKey={project.status} />
     </div>
   );
 }
