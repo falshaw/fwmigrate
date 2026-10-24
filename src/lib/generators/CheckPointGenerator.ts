@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  *
@@ -13,6 +12,7 @@ import {
   GenContext,
   analyseRule,
   confidenceFrom,
+  disableReason,
   describeRule,
   quote,
   unknownAddressWarning,
@@ -68,7 +68,7 @@ export class CheckPointGenerator extends BaseGenerator {
     const comments = [
       rule.description,
       facts.services.applications.length ? `Source App-ID: ${facts.services.applications.join(", ")}` : "",
-      facts.forceDisable ? "REVIEW: service unresolved, disabled by migration" : "",
+      disableReason(facts, unknown),
     ]
       .filter(Boolean)
       .join(" | ");
@@ -82,7 +82,7 @@ export class CheckPointGenerator extends BaseGenerator {
       `action ${quote(rule.action === "permit" ? "Accept" : "Drop")}`,
       `track.type ${quote(rule.logging ? "Log" : "None")}`,
     ];
-    if (!rule.enabled || facts.forceDisable) parts.push(`enabled false`);
+    if (!rule.enabled || disableReason(facts, unknown)) parts.push(`enabled false`);
     if (comments) parts.push(`comments ${quote(comments.slice(0, 1000))}`);
     parts.push(S);
 

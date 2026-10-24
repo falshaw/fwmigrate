@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  *
@@ -317,9 +316,18 @@ export interface ResolvedService {
   specs: ServiceSpec[];
   /** Catalog key when the service is a well-known one (lets targets use predefined names) */
   key?: string;
-  /** Where it came from */
-  origin: "catalog" | "object" | "literal" | "app-id";
+  /** Where it came from ("predefined": a platform name kept as is, same vendor only) */
+  origin: "catalog" | "object" | "literal" | "app-id" | "predefined";
 }
+
+/**
+ * Service names that are predefined on one platform and unknown to the
+ * catalog (Junos alone has hundreds of junos-* applications). They are only
+ * valid when the target is that same platform.
+ */
+export const PLATFORM_PREDEFINED: Array<{ vendor: string; pattern: RegExp }> = [
+  { vendor: "JUNIPER_SRX", pattern: /^junos-[a-z0-9-]+$/i },
+];
 
 export interface ServiceResolution {
   any: boolean;
@@ -329,6 +337,8 @@ export interface ServiceResolution {
   fromApplicationDefault: boolean;
   unmappedApps: string[];
   unresolvedServices: string[];
+  /** Platform-predefined names (see PLATFORM_PREDEFINED), resolved per target */
+  platformServices: Array<{ vendor: string; name: string }>;
   /** Nothing usable could be resolved: the generator must not emit a live rule */
   unresolvable: boolean;
 }
@@ -470,6 +480,7 @@ export function resolveServices(
     fromApplicationDefault: false,
     unmappedApps: [],
     unresolvedServices: [],
+    platformServices: [],
     unresolvable: false,
   };
 
@@ -521,15 +532,33 @@ export function resolveServices(
       push(catalogService(alias, "catalog"));
       continue;
     }
+    const platform = PLATFORM_PREDEFINED.find((p) => p.pattern.test(token));
+    if (platform) {
+      res.platformServices.push({ vendor: platform.vendor, name: token });
+      continue;
+    }
     res.unresolvedServices.push(token);
   }
 
   if (res.any) {
     res.services = [];
-  } else if (res.services.length === 0) {
+  } else if (res.services.length === 0 && res.platformServices.length === 0) {
     res.unresolvable = true;
   }
   return res;
+}
+
+/**
+ * Settle platform-predefined names for one target: kept as is when the target
+ * is that platform, unresolved otherwise (their ports are not known).
+ */
+export function applyPlatformServices(res: ServiceResolution, target: string): void {
+  for (const p of res.platformServices) {
+    if (p.vendor === target) res.services.push({ label: p.name, specs: [], origin: "predefined" });
+    else res.unresolvedServices.push(p.name);
+  }
+  res.platformServices = [];
+  if (!res.any && res.services.length === 0) res.unresolvable = true;
 }
 
 /**

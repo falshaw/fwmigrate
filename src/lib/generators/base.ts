@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  *
@@ -23,6 +22,7 @@ import type {
 import {
   isAnyToken,
   resolveServices,
+  applyPlatformServices,
   type ResolvedService,
   type ServiceResolution,
 } from "./services";
@@ -110,8 +110,18 @@ export interface GroupDef {
   members: string[];
 }
 
+/**
+ * Value of the placeholder object created for a name the source config
+ * references but never defines. The limited broadcast address never matches
+ * unicast traffic, and the rule using it is emitted disabled; the placeholder
+ * only lets the target accept the config. Replace it before enabling the rule.
+ */
+export const PLACEHOLDER_ADDRESS = "255.255.255.255";
+
 export class GenContext {
   readonly objects: Map<string, NormalizedObject>;
+  /** Names that got a placeholder object (see PLACEHOLDER_ADDRESS) */
+  readonly placeholders = new Set<string>();
   readonly zoneMappings: ZoneMapping[];
   /** Ordered address definitions to emit (source objects + literals) */
   readonly addresses = new Map<string, AddressDef>();
@@ -147,6 +157,7 @@ export class GenContext {
     if (ref.kind === "any") return null;
     if (ref.kind === "unknown") {
       unknown.push(token);
+      this.placeholder(token);
       return token;
     }
     if (ref.kind === "object") {
@@ -167,6 +178,7 @@ export class GenContext {
         this.addresses.set(obj.name, { name: obj.name, ref: lit });
       } else {
         unknown.push(obj.name);
+        this.placeholder(obj.name);
       }
       return;
     }
@@ -191,6 +203,12 @@ export class GenContext {
       }
       this.groups.set(obj.name, { name: obj.name, members });
     }
+  }
+
+  private placeholder(name: string) {
+    if (this.addresses.has(name)) return;
+    this.placeholders.add(name);
+    this.addresses.set(name, { name, ref: { kind: "host", ip: PLACEHOLDER_ADDRESS } });
   }
 }
 
@@ -222,6 +240,7 @@ export function analyseRule(
   target: FirewallVendor,
 ): RuleFacts {
   const services = resolveServices(rule, ctx.objects);
+  applyPlatformServices(services, target);
   const warnings: string[] = [];
   let penalty = 0;
   let forceDisable = false;
@@ -270,7 +289,7 @@ export function analyseRule(
 
   const anySrc = rule.sources.every(isAnyToken);
   const anyDst = rule.destinations.every(isAnyToken);
-  if (rule.action === "permit" && anySrc && anyDst && services.any) {
+  if (rule.enabled && rule.action === "permit" && anySrc && anyDst && services.any) {
     warnings.push("REVIEW: permit any/any/any — overly permissive.");
   }
 
@@ -278,7 +297,8 @@ export function analyseRule(
 }
 
 export function confidenceFrom(facts: RuleFacts, extraPenalty = 0, unknownAddrs = 0): number {
-  if (facts.forceDisable) return 0.3;
+  // Emitted disabled (unresolved service or undefined address): needs a human.
+  if (facts.forceDisable || unknownAddrs > 0) return 0.3;
   const c = 0.95 - facts.penalty - extraPenalty - unknownAddrs * 0.2;
   return Math.max(0.1, Math.min(0.95, Math.round(c * 100) / 100));
 }
@@ -286,8 +306,21 @@ export function confidenceFrom(facts: RuleFacts, extraPenalty = 0, unknownAddrs 
 export function unknownAddressWarning(unknown: string[]): string[] {
   if (!unknown.length) return [];
   return [
-    `REVIEW: address ${[...new Set(unknown)].join(", ")} is referenced but not defined in the source config — create it on the target.`,
+    `REVIEW: address ${[...new Set(unknown)].join(", ")} is referenced but not defined in the source config — rule emitted DISABLED with a placeholder object (${PLACEHOLDER_ADDRESS}/32) so the config loads; set the real address before enabling it.`,
   ];
+}
+
+/**
+ * Why the migration emits this rule disabled, or "" when it does not. A rule
+ * whose service could not be resolved, or that references an address defined
+ * nowhere, would be rejected by the target (or match the wrong traffic), so it
+ * is never emitted live.
+ */
+export function disableReason(facts: RuleFacts, unknown: string[], verb = "disabled"): string {
+  if (facts.forceDisable) return `REVIEW: service unresolved, ${verb} by migration`;
+  if (unknown.length)
+    return `REVIEW: address ${[...new Set(unknown)].join(", ")} not defined, ${verb} by migration`;
+  return "";
 }
 
 export function describeRule(

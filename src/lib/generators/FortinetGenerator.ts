@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  *
@@ -14,6 +13,7 @@ import {
   GenContext,
   analyseRule,
   confidenceFrom,
+  disableReason,
   describeRule,
   prefixToMask,
   quote,
@@ -67,11 +67,14 @@ export class FortinetGenerator extends BaseGenerator {
     if (rule.description) commentParts.push(rule.description);
     if (facts.services.applications.length)
       commentParts.push(`Source App-ID: ${facts.services.applications.join(", ")}`);
-    if (facts.forceDisable) commentParts.push("REVIEW: service unresolved, disabled by migration");
+    const disabledBy = disableReason(facts, unknown);
+    if (disabledBy) commentParts.push(disabledBy);
     const comment = commentParts.join(" | ").slice(0, COMMENT_MAX);
 
     const lines: string[] = [];
-    lines.push(`    edit ${rule.position}`);
+    // edit 0: FortiOS assigns the next free policy ID. Writing the source
+    // position (edit 1, 2, ...) would overwrite existing policies on the box.
+    lines.push("    edit 0");
     lines.push(`        set name ${quote(name)}`);
     lines.push(`        set srcintf ${quote(srcintf)}`);
     lines.push(`        set dstintf ${quote(dstintf)}`);
@@ -81,7 +84,7 @@ export class FortinetGenerator extends BaseGenerator {
     lines.push(`        set schedule "always"`);
     lines.push(`        set service ${services.map(quote).join(" ")}`);
     lines.push(`        set logtraffic ${rule.logging ? "all" : "disable"}`);
-    if (!rule.enabled || facts.forceDisable) lines.push(`        set status disable`);
+    if (!rule.enabled || disabledBy) lines.push(`        set status disable`);
     if (comment) lines.push(`        set comments ${quote(comment)}`);
     lines.push("    next");
 
@@ -179,8 +182,15 @@ export class FortinetGenerator extends BaseGenerator {
     return {
       position: rule.position,
       ruleName: rule.name,
-      command: `config firewall policy\n    delete ${rule.position}\nend`,
-      explanation: `Delete migrated policy ${rule.position} ("${rule.name}") from the FortiGate`,
+      // The import used "edit 0", so FortiOS chose the ID: look it up by the
+      // policy name (unique per VDOM), then delete that ID.
+      command: [
+        `show firewall policy | grep -f ${quote(rule.name)}`,
+        "config firewall policy",
+        "    delete <id shown by the command above>",
+        "end",
+      ].join("\n"),
+      explanation: `Find the ID FortiOS gave policy "${rule.name}", then delete that policy`,
     };
   }
 }

@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  *
@@ -13,6 +12,7 @@ import {
   GenContext,
   analyseRule,
   confidenceFrom,
+  disableReason,
   describeRule,
   quote,
   unknownAddressWarning,
@@ -96,11 +96,11 @@ export class PaloAltoGenerator extends BaseGenerator {
       `${r} action ${action}`,
       `${r} log-end ${rule.logging ? "yes" : "no"}`,
     ];
-    const desc = [rule.description, facts.forceDisable ? "REVIEW: service unresolved, disabled by migration" : ""]
+    const desc = [rule.description, disableReason(facts, unknown)]
       .filter(Boolean)
       .join(" | ");
     if (desc) lines.push(`${r} description ${quote(desc.slice(0, 1023))}`);
-    if (!rule.enabled || facts.forceDisable) lines.push(`${r} disabled yes`);
+    if (!rule.enabled || disableReason(facts, unknown)) lines.push(`${r} disabled yes`);
 
     warnings.push(...unknownAddressWarning(unknown));
     return {

@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  *
@@ -14,6 +13,7 @@ import {
   GenContext,
   analyseRule,
   confidenceFrom,
+  disableReason,
   describeRule,
   quote,
   unknownAddressWarning,
@@ -69,12 +69,12 @@ export class JuniperSRXGenerator extends BaseGenerator {
     const desc = [
       rule.description,
       facts.services.applications.length ? `Source App-ID: ${facts.services.applications.join(", ")}` : "",
-      facts.forceDisable ? "REVIEW: service unresolved, deactivated by migration" : "",
+      disableReason(facts, unknown, "deactivated"),
     ]
       .filter(Boolean)
       .join(" | ");
     if (desc) lines.push(`${p} description ${quote(desc.slice(0, 900))}`);
-    if (!rule.enabled || facts.forceDisable) lines.push(p.replace(/^set /, "deactivate "));
+    if (!rule.enabled || disableReason(facts, unknown)) lines.push(p.replace(/^set /, "deactivate "));
 
     warnings.push(...unknownAddressWarning(unknown));
     return {
@@ -86,6 +86,7 @@ export class JuniperSRXGenerator extends BaseGenerator {
   }
 
   private appNames(s: ResolvedService, ctx: GenContext): string[] {
+    if (s.origin === "predefined") return [s.label];
     if (s.origin !== "object") {
       const pre = predefinedNames(s.key, "junos");
       if (pre) return pre;
