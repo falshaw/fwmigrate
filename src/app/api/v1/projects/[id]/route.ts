@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  */
@@ -7,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/apiHandler";
 import prisma from "@/lib/prisma";
+import { recordStatusChange } from "@/lib/projectHistory";
 import { notFound } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { updateProjectSchema } from "@/lib/validators/project";
@@ -91,25 +91,7 @@ export const PATCH = apiHandler(
     });
 
     if (statusChanged && validated.status) {
-      const versionCount = await prisma.projectVersion.count({
-        where: { projectId: params.id },
-      });
-      await prisma.projectVersion.create({
-        data: {
-          projectId: params.id,
-          version: versionCount + 1,
-          fromStatus: existing.status,
-          toStatus: validated.status,
-          snapshot: {
-            ruleCount: existing.ruleCount,
-            objectCount: existing.objectCount,
-            natRuleCount: existing.natRuleCount,
-            parseConfidence: existing.parseConfidence,
-            translatedCount: existing._count.translatedRules,
-          },
-          changedById: user.id,
-        },
-      });
+      await recordStatusChange(params.id, validated.status, user.id);
     }
 
     logger.info("Project updated", {

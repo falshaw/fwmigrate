@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  */
@@ -16,12 +15,15 @@ import type { FirewallVendor } from "@/lib/parsers/types";
 
 /**
  * GET /api/v1/projects/[id]/zones
- * Retrieve all zone mappings for a project.
+ * The zone mappings of a project plus every zone its parsed rules use.
  */
 export const GET = apiHandler(async ({ params, organizationId }) => {
   const project = await prisma.migrationProject.findUnique({
     where: { id: params.id },
-    select: { organizationId: true },
+    select: {
+      organizationId: true,
+      normalizedRules: { select: { sourceZone: true, destinationZone: true } },
+    },
   });
 
   if (!project) return notFound("Project not found");
@@ -33,7 +35,17 @@ export const GET = apiHandler(async ({ params, organizationId }) => {
     orderBy: { sourceZone: "asc" },
   });
 
-  return NextResponse.json({ zoneMappings });
+  const zones = new Set<string>();
+  for (const r of project.normalizedRules) {
+    for (const z of [r.sourceZone, r.destinationZone]) {
+      if (z && z.toLowerCase() !== "any") zones.add(z);
+    }
+  }
+
+  return NextResponse.json({
+    zoneMappings,
+    sourceZones: [...zones].sort((a, b) => a.localeCompare(b)),
+  });
 });
 
 /**

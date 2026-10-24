@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  */
@@ -8,6 +7,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiHandler } from "@/lib/apiHandler";
 import prisma from "@/lib/prisma";
+import { recordStatusChange } from "@/lib/projectHistory";
 import { notFound, badRequest } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { getGenerator } from "@/lib/generators/GeneratorFactory";
@@ -64,7 +64,7 @@ async function loadProject(id: string, organizationId: string) {
  * as a bounded background job; poll GET for its progress.
  */
 export const POST = apiHandler(
-  async ({ params, organizationId, req }) => {
+  async ({ params, organizationId, req, user }) => {
     // Body is optional (the UI posts none); validate it when present
     const rawBody = await req.text();
     let body: TranslateInput;
@@ -185,6 +185,8 @@ export const POST = apiHandler(
           ]
         : []),
     ]);
+
+    if (outcome.status !== project.status) await recordStatusChange(params.id, outcome.status, user.id);
 
     const translatedCount = next.length;
     const averageConfidence =
