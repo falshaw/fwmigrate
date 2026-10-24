@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  */
@@ -7,10 +6,12 @@
 import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/apiHandler";
 import prisma from "@/lib/prisma";
+import { recordStatusChange } from "@/lib/projectHistory";
 import { notFound, badRequest } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { getGenerator } from "@/lib/generators/GeneratorFactory";
 import { toNormalizedRule } from "@/lib/mappers/ruleMapper";
+import { vendorLabel } from "@/lib/vendors";
 import type { FirewallVendor, NormalizedObject } from "@/lib/parsers/types";
 
 /**
@@ -19,7 +20,7 @@ import type { FirewallVendor, NormalizedObject } from "@/lib/parsers/types";
  * type=plan: Export a migration plan with checklists and rollback procedures.
  * type=report: Export a migration summary report (FM-03) with stats, risk, and findings.
  */
-export const GET = apiHandler(async ({ params, organizationId, req }) => {
+export const GET = apiHandler(async ({ params, organizationId, req, user }) => {
   const exportType = new URL(req.url).searchParams.get("type") || "config";
 
   const project = await prisma.migrationProject.findUnique({
@@ -119,7 +120,7 @@ export const GET = apiHandler(async ({ params, organizationId, req }) => {
   const header = [
     `${c} =============================================================================`,
     `${c} FW Migrate export -- ${project.name}`,
-    `${c} Source: ${project.sourceVendor} -> Target: ${project.targetVendor}`,
+    `${c} Source: ${vendorLabel(project.sourceVendor)} -> Target: ${vendorLabel(project.targetVendor)}`,
     `${c} Rules exported (approved or modified): ${ruleCount}`,
     `${c} Generated: ${timestamp}`,
     `${c} Review every line before applying it to a device.`,
@@ -133,6 +134,7 @@ export const GET = apiHandler(async ({ params, organizationId, req }) => {
     where: { id: params.id },
     data: { status: "EXPORTED" },
   });
+  await recordStatusChange(params.id, "EXPORTED", user.id);
 
   const filename = `${project.name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${project.targetVendor}_export.txt`;
 
@@ -202,8 +204,8 @@ function generateMigrationPlan(
   sections.push(``);
   sections.push(`| Field | Value |`);
   sections.push(`|-------|-------|`);
-  sections.push(`| Source Vendor | ${project.sourceVendor} |`);
-  sections.push(`| Target Vendor | ${project.targetVendor} |`);
+  sections.push(`| Source Vendor | ${vendorLabel(project.sourceVendor)} |`);
+  sections.push(`| Target Vendor | ${vendorLabel(project.targetVendor)} |`);
   sections.push(`| Rules Migrated | ${rules.length} |`);
   sections.push(`| Manually Modified | ${modified.length} |`);
   sections.push(`| Avg. Confidence | ${avgConfidence}% |`);
@@ -218,17 +220,17 @@ function generateMigrationPlan(
   sections.push(`## Pre-Migration Checklist`);
   sections.push(``);
   sections.push(
-    `- [ ] Back up current ${project.sourceVendor} running configuration`,
+    `- [ ] Back up current ${vendorLabel(project.sourceVendor)} running configuration`,
   );
   sections.push(
-    `- [ ] Back up current ${project.targetVendor} running configuration (if exists)`,
+    `- [ ] Back up current ${vendorLabel(project.targetVendor)} running configuration (if exists)`,
   );
   sections.push(`- [ ] Schedule maintenance window with stakeholders`);
   sections.push(
     `- [ ] Notify affected teams (NOC, security, application owners)`,
   );
   sections.push(
-    `- [ ] Verify ${project.targetVendor} device is reachable and management access is working`,
+    `- [ ] Verify ${vendorLabel(project.targetVendor)} device is reachable and management access is working`,
   );
   sections.push(`- [ ] Confirm required licenses are active on target device`);
   sections.push(
@@ -269,7 +271,7 @@ function generateMigrationPlan(
   sections.push(`## Migration Steps`);
   sections.push(``);
   sections.push(
-    `Apply the following rules in order on the ${project.targetVendor} device:`,
+    `Apply the following rules in order on the ${vendorLabel(project.targetVendor)} device:`,
   );
   sections.push(``);
 
@@ -341,10 +343,10 @@ function generateMigrationPlan(
   sections.push(`If issues are detected during or after migration:`);
   sections.push(``);
   sections.push(
-    `1. **Immediate:** Revert to the backed-up ${project.sourceVendor} configuration`,
+    `1. **Immediate:** Revert to the backed-up ${vendorLabel(project.sourceVendor)} configuration`,
   );
   sections.push(
-    `2. **On ${project.targetVendor}:** Execute the rollback commands below (reverse order)`,
+    `2. **On ${vendorLabel(project.targetVendor)}:** Execute the rollback commands below (reverse order)`,
   );
   sections.push(
     `3. **Verify:** Confirm traffic is flowing through original path`,
@@ -388,7 +390,7 @@ function generateMigrationPlan(
   sections.push(``);
   sections.push(`---`);
   sections.push(
-    `*Generated by FW Migrate -- AI-Powered Firewall Migration Platform*`,
+    `*Generated by FW Migrate*`,
   );
   sections.push(`*FW Migrate -- ${timestamp}*`);
 
@@ -445,17 +447,22 @@ function generateMigrationReport(
     actions.set(action, (actions.get(action) || 0) + 1);
   }
 
-  // Risk score: simple heuristic
-  const riskPoints =
-    criticalIssues.length * 10 +
-    highIssues.length * 5 +
-    mediumIssues.length * 2 +
-    lowConf * 3;
-  const maxRisk = rules.length * 10;
-  const riskPercent =
-    maxRisk > 0 ? Math.min(100, Math.round((riskPoints / maxRisk) * 100)) : 0;
+  // Risk level from the worst evidence, not an average: one permit any/any/any
+  // or one rule that never matches is enough to make a migration risky.
+  const riskReasons: string[] = [];
+  if (criticalIssues.length)
+    riskReasons.push(`${criticalIssues.length} critical analysis finding(s): ${criticalIssues.map((i) => i.title).join("; ")}`);
+  if (lowConf)
+    riskReasons.push(`${lowConf} exported rule(s) with low translation confidence (<70%)`);
+  if (highIssues.length) riskReasons.push(`${highIssues.length} high-severity finding(s)`);
+  if (mediumIssues.length) riskReasons.push(`${mediumIssues.length} medium-severity finding(s)`);
+  if (modified) riskReasons.push(`${modified} rule(s) changed by hand after translation`);
   const riskLevel =
-    riskPercent >= 60 ? "HIGH" : riskPercent >= 30 ? "MEDIUM" : "LOW";
+    criticalIssues.length || lowConf
+      ? "HIGH"
+      : highIssues.length || mediumIssues.length || modified
+        ? "MEDIUM"
+        : "LOW";
 
   const s: string[] = [];
 
@@ -464,20 +471,20 @@ function generateMigrationReport(
   s.push("");
   s.push(`Project:        ${project.name}`);
   if (project.description) s.push(`Description:    ${project.description}`);
-  s.push(`Source Vendor:   ${project.sourceVendor}`);
-  s.push(`Target Vendor:   ${project.targetVendor}`);
+  s.push(`Source Vendor:   ${vendorLabel(project.sourceVendor)}`);
+  s.push(`Target Vendor:   ${vendorLabel(project.targetVendor)}`);
   s.push(`Generated:       ${timestamp}`);
   s.push("");
 
   s.push("EXECUTIVE SUMMARY");
   s.push("-".repeat(60));
-  s.push(`  Total Rules Migrated:    ${rules.length}`);
-  s.push(`  Auto-Approved:           ${approved}`);
-  s.push(`  Manually Modified:       ${modified}`);
+  s.push(`  Rules exported:          ${rules.length}`);
+  s.push(`  Approved as translated:  ${approved}`);
+  s.push(`  Changed by hand:         ${modified}`);
   s.push(
     `  Average Confidence:      ${(parseFloat(avgConfidence) * 100).toFixed(0)}%`,
   );
-  s.push(`  Migration Risk:          ${riskLevel} (${riskPercent}%)`);
+  s.push(`  Migration risk:          ${riskLevel}`);
   s.push(`  Analysis Findings:       ${issues.length}`);
   s.push("");
 
@@ -541,24 +548,16 @@ function generateMigrationReport(
 
   s.push("RISK ASSESSMENT");
   s.push("-".repeat(60));
-  s.push(`  Overall Risk Level: ${riskLevel}`);
-  s.push(`  Risk Score:         ${riskPercent}% (${riskPoints} points)`);
+  s.push(`  Risk level: ${riskLevel}`);
+  s.push("  HIGH = any critical finding or low-confidence rule; MEDIUM = high or medium findings.");
   s.push("");
-  s.push("  Risk Factors:");
-  if (criticalIssues.length > 0)
-    s.push(`    - ${criticalIssues.length} critical analysis findings`);
-  if (highIssues.length > 0)
-    s.push(`    - ${highIssues.length} high-severity findings`);
-  if (lowConf > 0)
-    s.push(`    - ${lowConf} rules with low translation confidence`);
-  if (modified > 0)
-    s.push(`    - ${modified} rules required manual modification`);
-  if (riskPoints === 0) s.push("    - No significant risk factors identified");
+  s.push("  Because of:");
+  if (riskReasons.length) for (const r of riskReasons) s.push(`    - ${r}`);
+  else s.push("    - no findings above low severity");
   s.push("");
 
   s.push("=".repeat(60));
-  s.push("Generated by FW Migrate — AI-Powered Firewall Migration Platform");
-  s.push(`FW Migrate — ${timestamp}`);
+  s.push(`Generated by FW Migrate, ${timestamp}`);
 
   return s.join("\n");
 }

@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  */
@@ -23,7 +22,7 @@ type SuggestInput = z.infer<typeof suggestSchema>;
 
 /**
  * POST /api/v1/ai/suggest
- * Get AI-powered suggestions for a project.
+ * Get LLM suggestions for a project (optional, labelled as AI).
  *   - "zones": Suggests zone mappings based on source vendor zones
  *   - "naming": Suggests naming conventions for the target vendor
  *   - "optimization": Suggests rule consolidation and cleanup opportunities

@@ -154,14 +154,14 @@ export default function IntegratePage() {
 
       {/* Connection Status */}
       <div className="card p-5 mb-4">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-2">
             <Settings className="w-5 h-5 text-accent" />
             <h2 className="!text-base">
-              Connection Status
+              Connection status
             </h2>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {isConnected && (
               <a
                 href={changeManagerUrl}
@@ -170,7 +170,7 @@ export default function IntegratePage() {
                 className="btn btn-ghost btn-sm"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                Open Change Manager
+                Open change manager
               </a>
             )}
             <button
@@ -183,7 +183,7 @@ export default function IntegratePage() {
               ) : (
                 <Wifi className="w-3.5 h-3.5" />
               )}
-              Test Connection
+              Test connection
             </button>
           </div>
         </div>
@@ -196,9 +196,11 @@ export default function IntegratePage() {
             </p>
           </div>
           <div className="rounded-xl border border-g-line bg-g-bg p-4">
-            <p className="eyebrow mb-1">API Key</p>
+            <p className="eyebrow mb-1">API key</p>
             <p className="text-[13px]">
-              {status?.hasApiKey ? "Configured" : "Not set (using open access)"}
+              {status?.hasApiKey
+                ? "Configured (sent as a bearer token)"
+                : "None: requests are sent without authentication"}
             </p>
           </div>
           <div className="rounded-xl border border-g-line bg-g-bg p-4">
@@ -217,11 +219,10 @@ export default function IntegratePage() {
                 </p>
               </div>
             </div>
-            {status?.connection?.latencyMs !== undefined && (
+            {status?.apiUrl && status.connection?.latencyMs !== undefined && (
               <p className="text-[11px] text-ink-45 mt-1">
-                Latency: {status.connection.latencyMs}ms
-                {status.connection.version &&
-                  ` | v${status.connection.version}`}
+                Latency: {status.connection.latencyMs} ms
+                {status.connection.version && ` · version ${status.connection.version}`}
               </p>
             )}
             {status?.connection?.error && (
@@ -264,7 +265,7 @@ export default function IntegratePage() {
           <div className="flex items-center gap-2 mb-3">
             <Send className="w-5 h-5 text-accent" />
             <h3 className="!text-sm font-semibold">
-              Push Results: {pushResult.projectName}
+              Push results: {pushResult.projectName}
             </h3>
             <span className="ml-auto text-xs text-ink-65">
               {pushResult.success}/{pushResult.totalRules} rules pushed
@@ -347,20 +348,20 @@ export default function IntegratePage() {
       {/* Eligible Projects */}
       <div className="card p-5">
         <h2 className="!text-base mb-4">
-          Projects Ready for Push
+          Translated projects
         </h2>
 
         {projects.length === 0 ? (
           <div className="text-center py-8">
             <Send className="w-8 h-8 text-ink-45 mx-auto mb-2" />
             <p className="text-[13px] text-ink-65">
-              No projects ready. Translate and approve rules in a project first.
+              No translated projects yet. Translate a project, review its rules, then push them here.
             </p>
             <Link
               href="/dashboard/projects"
               className="text-xs font-semibold text-accent hover:underline mt-2 inline-flex items-center gap-1"
             >
-              Go to Projects <ArrowRight className="w-3 h-3" />
+              Go to projects <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
         ) : (
