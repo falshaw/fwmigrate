@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  *
@@ -101,7 +100,7 @@ export async function testChangeManagerConnection(): Promise<{
       return {
         connected: true,
         latencyMs,
-        version: data.version || "unknown",
+        version: typeof data.version === "string" && data.version ? data.version : undefined,
       };
     }
 

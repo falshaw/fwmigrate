@@ -229,7 +229,7 @@ export default function ReviewPage() {
                 });
                 const badge = decided
                   ? REVIEW_STATUS_BADGE[t.reviewStatus] ?? REVIEW_STATUS_BADGE.PENDING
-                  : { cls: RULE_STATE_BADGE[state], label: state };
+                  : { cls: RULE_STATE_BADGE[state], label: { risk: "risk", flag: "check", ok: "ok" }[state] };
                 const on = rule.id === selectedId;
                 return (
                   <li key={rule.id} className="border-b border-line-2 last:border-b-0">

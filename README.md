@@ -16,10 +16,10 @@ Firewall migrations are mostly careful bookkeeping: hundreds of rules, objects a
 Import config -> Parse -> Analyse -> Translate -> Review -> Export
 ```
 
-1. **Import** a configuration: drop or choose a file (the vendor is detected and checked against the project), or paste it.
+1. **Import** a configuration: drop or choose a file (the vendor is detected and checked against the project), or paste it. A config in which the project's parser finds no security rules (wrong vendor, empty export) is refused and nothing changes. Importing again replaces the config and discards the analysis, translation and review that came from it.
 2. **Parse** it with the vendor's parser into rules, address/service objects and groups, and NAT rules.
 3. **Analyse** the rule base (see [Rule analysis](#rule-analysis)).
-4. **Translate** each rule with the target vendor's generator. Every rule gets a confidence score and review flags.
+4. **Translate** each rule with the target vendor's generator. Every rule gets a confidence score and review flags. On the same page, **zone mapping** sets the target interface or zone for every zone the rules use (default: the source name).
 5. **Review** rule by rule: approve, skip or flag. The project moves to *Reviewing*, and to *Approved* once every rule has a decision.
 6. **Export** the target configuration (objects + rules), a migration plan (checklists, per-rule rollback commands) or a summary report.
 
@@ -46,7 +46,10 @@ Parsers keep each vendor's own tokens on the rule (`application-default`, `any`,
 - **Services** are first resolved to protocol/port specs (`src/lib/generators/services.ts`), then each target uses its own predefined service (FortiOS `HTTPS`/`DNS`/`PING`, Junos `junos-https`, Check Point `https`/`domain-udp`, PAN-OS `service-https`) or emits a custom service object.
 - **PAN-OS App-ID with `application-default`** is resolved from the rule's applications to their standard ports: `ssl` -> 443, `web-browsing` -> 80, `dns` -> 53, `ssh`, `telnet`, `ftp`, `smtp`, `pop3`, `imap`, `ntp`, `snmp`, `syslog`, `ldap`, `ms-rdp`, `tftp`, `mssql-db`, `mysql`, `ms-ds-smb`, `kerberos`, `bgp`, `ping`, `icmp`. The App-IDs stay visible in the target rule's comment/description (and are kept as App-ID when the target is PAN-OS). Layer-7 enforcement is not carried over and the rule says so.
 - **Anything that cannot be mapped** (an unknown App-ID, a service name not defined in the source) lowers the rule's confidence and adds a `REVIEW:` flag. A rule with no resolvable service is emitted **disabled**, never as a live rule with a guessed service.
+- **Undefined addresses**: a name the source rule uses but the source config never defines gets a placeholder object (`255.255.255.255/32`, which matches no unicast traffic) so the target accepts the config, and the rule is emitted **disabled** with a `REVIEW:` note. Set the real address before enabling it.
+- **Same-platform names**: Junos `junos-*` applications are predefined on the SRX, so an SRX -> SRX migration keeps them as they are; to any other target they are unresolved.
 - **Objects**: every address, group and service a rule references is emitted before the rules, including objects created for literal IPs, ranges and FQDNs used directly in rules (SRX and FortiOS policies cannot reference literals).
+- **FortiOS policy IDs**: policies are written as `edit 0`, so the FortiGate assigns the next free IDs and never overwrites an existing policy. The rollback commands look a policy up by its name.
 - **Zones**: zone mappings from the project are applied. ASA rules go into `<nameif>_access_in` ACLs bound with `access-group` (source zone `any` -> global ACL, flagged); SRX rules with an `any` zone become global policies; Check Point rules carry a flag that zones need security-zone objects.
 - **Any vs all**: `any` becomes `all`/`ALL` on FortiOS, `Any` on Check Point, `ip` on ASA, `any` on PAN-OS and Junos.
 
@@ -140,10 +143,11 @@ AI text is stored apart from the generator's deterministic notes. On the review 
 - Five vendors, each as source and target (table above)
 - Import by file (drag and drop or file picker, vendor detection, 20 MB limit) or paste
 - Rule analysis on resolved objects and groups: conflicts, shadows, duplicates, redundant rules, risky overlaps, permissive rules, disabled rules, undefined objects
-- Vendor-specific syntax validation of raw configs or of a project's generated config (`src/lib/validation/ConfigValidator.ts`)
+- Validation of raw configs or of the config a project would export (`src/lib/validation/ConfigValidator.ts`): vendor syntax, plus every address, group and service a rule references must be defined or predefined (`src/lib/validation/references.ts`; a device rejects a rule with an unknown name, even a disabled one). Rule order is judged by the analysis step, not here.
 - Deterministic translation with per-rule confidence and review flags
-- Per-rule review with version history; fast reviewing is limited per user (600 decisions a minute), not per browser
-- Batch migrations (up to 50 configs per batch, vendor detected per file)
+- Per-rule review; fast reviewing is limited per user (600 decisions a minute), not per browser
+- Project history: every step (parsed, analysed, translated, reviewed, exported, config replaced) with who did it and the counts at the time
+- Batch migrations (up to 50 configs per batch, vendor detected per file); the batch export is one complete config per file (objects, then rules), marked as not reviewed
 - Exports: complete target config, migration plan with rollback commands, report
 - Delete a project (admins) with everything that belongs to it
 - Optional push of approved rules to an external change-management system over HTTP; the push button stays disabled, with the reason, while that system is not configured or not reachable
@@ -213,7 +217,8 @@ npm run lint
 ```
 
 - `tests/parsers/`: each parser against a synthetic config in `tests/fixtures/`.
-- `tests/generators/`: PAN-OS fixture -> FortiOS in detail, plus every source/target pair for valid references and leaked keywords.
+- `tests/generators/`: PAN-OS fixture -> FortiOS in detail, every source/target pair for valid references and leaked keywords, and output a device loads (placeholders for undefined names, FortiOS `edit 0`, same-platform service names).
+- `tests/validation/`: every generated config validates without errors; undefined references are errors, normal block syntax raises no warnings.
 - `tests/analysis/`: the analysis engine, object and group resolution, and the findings on every fixture.
 - `tests/lib/`: project status rules (re-runs never move a project back) and rate limits.
 - `tests/ui/`: vendor detection, file upload checks, the delete dialog and that every project table cascades on delete, Change Manager push gating, safe sign-in redirects.

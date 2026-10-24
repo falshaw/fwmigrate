@@ -259,7 +259,7 @@ export default function BatchMigrationPage() {
       {showCreate && (
         <div className="card p-5 mb-4">
           <h2 className="!text-base mb-4">
-            Create Batch Migration
+            Create batch migration
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -474,7 +474,7 @@ export default function BatchMigrationPage() {
               }
               className="btn btn-ghost btn-sm"
             >
-              <Upload className="w-4 h-4" /> Add Config Manually
+              <Upload className="w-4 h-4" /> Add config manually
             </button>
             <div className="flex-1" />
             <button
@@ -497,7 +497,7 @@ export default function BatchMigrationPage() {
               ) : (
                 <Plus className="w-4 h-4" />
               )}
-              Create Batch ({configs.length} config
+              Create batch ({configs.length} config
               {configs.length !== 1 ? "s" : ""})
             </button>
           </div>
@@ -508,7 +508,7 @@ export default function BatchMigrationPage() {
       {results && (
         <div className="card p-5 mb-4">
           <h3 className="!text-base mb-3">
-            Batch Results
+            Batch results
           </h3>
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div className="rounded-xl border border-g-line bg-g-bg p-3 text-center">
@@ -527,7 +527,7 @@ export default function BatchMigrationPage() {
               <div className="text-xl font-bold text-accent">
                 {results.reduce((s, r) => s + (r.ruleCount || 0), 0)}
               </div>
-              <div className="text-xs text-ink-65">Total Rules</div>
+              <div className="text-xs text-ink-65">Total rules</div>
             </div>
           </div>
           <div className="space-y-2">
@@ -605,7 +605,7 @@ export default function BatchMigrationPage() {
                       </span>
                     )}
                     <span className="text-xs text-ink-45">
-                      {new Date(batch.createdAt).toLocaleDateString()}
+                      {new Date(batch.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                     </span>
                   </div>
                 </div>
@@ -639,10 +639,10 @@ export default function BatchMigrationPage() {
               </div>
 
               {/* Progress bar for running batch */}
-              {running === batch.id && runProgress > 0 && (
+              {running === batch.id && runProgress > 0 && batch.status !== "completed" && (
                 <div className="mt-3">
                   <div className="flex justify-between text-[11px] text-ink-45 mb-1">
-                    <span>Processing configs...</span>
+                    <span>Processing configs…</span>
                     <span>{runProgress}%</span>
                   </div>
                   <div className="w-full bg-track rounded-full h-1.5 overflow-hidden">

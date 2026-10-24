@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  *
@@ -10,6 +9,24 @@
 import type { NormalizedRule, FirewallVendor } from "../parsers/types";
 import { ollamaGenerate } from "./OllamaClient";
 import { logger } from "../logger";
+import { vendorLabel } from "../vendors";
+
+/**
+ * Facts the model must not contradict. Without them small models claimed that
+ * PAN-OS App-ID with application-default matches "regardless of port".
+ */
+function platformFacts(rule: NormalizedRule, sourceVendor: FirewallVendor): string[] {
+  const facts: string[] = [];
+  if (sourceVendor === "PALO_ALTO" && rule.services.includes("application-default")) {
+    facts.push(
+      'PAN-OS service "application-default" allows each listed App-ID only on that application\'s standard ports. ' +
+        "A target rule on those same ports therefore matches the same ports. The real difference: the target no " +
+        "longer checks that the traffic IS that application, so any traffic on those ports is allowed.",
+    );
+  }
+  if (!rule.enabled) facts.push("The source rule is disabled: it matches no traffic.");
+  return facts;
+}
 
 export interface TranslationExplanation {
   rulePosition: number;
@@ -29,10 +46,11 @@ function buildPrompt(
   const apps = (rule.rawVendorData?.application as string[] | undefined)?.filter(
     (a) => a !== "any",
   );
+  const facts = platformFacts(rule, sourceVendor);
   return `You are a senior firewall engineer reviewing one migrated rule.
 
-Source vendor: ${sourceVendor}
-Target vendor: ${targetVendor}
+Source vendor: ${vendorLabel(sourceVendor)}
+Target vendor: ${vendorLabel(targetVendor)}
 
 Source rule:
   Name: ${rule.name}
@@ -50,10 +68,13 @@ ${targetConfig}
 Review flags already raised by the translator:
 ${reviewFlags.length ? reviewFlags.map((f) => `- ${f}`).join("\n") : "- none"}
 
-In two or three plain sentences, explain what the rule allows or blocks and
-any behavioural difference between the two platforms an engineer must check.
+${facts.length ? `Facts (true, do not contradict them):\n${facts.map((f) => `- ${f}`).join("\n")}\n\n` : ""}In two or three plain sentences, explain what the rule allows or blocks and
+any behavioural difference between the two platforms that matters for THIS rule.
 List extra warnings only if they are concrete and not already in the flags.
-Do not invent objects, ports or vendor features.
+Do not invent objects, ports or vendor features. Do not add generic remarks
+about the platforms (proxy or flow mode, session timeouts, logging defaults,
+"verify the object contents") that this rule's config does not show.
+If there is no behavioural difference, say so.
 
 Respond with JSON only: {"explanation": "...", "warnings": ["..."]}`;
 }
@@ -104,7 +125,7 @@ export async function explainTranslation(
     });
     return {
       rulePosition: sourceRule.position,
-      explanation: `Rule "${sourceRule.name}" translated from ${sourceVendor} to ${targetVendor}. Action: ${sourceRule.action}, sources: ${sourceRule.sources.join(", ")}, destinations: ${sourceRule.destinations.join(", ")}, services: ${sourceRule.services.join(", ")}.`,
+      explanation: `Rule "${sourceRule.name}" translated from ${vendorLabel(sourceVendor)} to ${vendorLabel(targetVendor)}. Action: ${sourceRule.action}, sources: ${sourceRule.sources.join(", ")}, destinations: ${sourceRule.destinations.join(", ")}, services: ${sourceRule.services.join(", ")}.`,
       warnings: [],
       source: "fallback",
     };

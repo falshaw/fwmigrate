@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  *
@@ -11,8 +10,12 @@ import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/apiHandler";
 import prisma from "@/lib/prisma";
 import { notFound, badRequest } from "@/lib/errors";
-import { logger } from "@/lib/logger";
-import { getChangeManagerConfig } from "@/lib/change-manager-integration";
+import {
+  getChangeManagerConfig,
+  pushRulesToChangeManager,
+  type ChangeManagerRulePayload,
+} from "@/lib/change-manager-integration";
+import { vendorLabel } from "@/lib/vendors";
 import { z } from "zod";
 
 const integrationSchema = z.object({
@@ -22,28 +25,6 @@ const integrationSchema = z.object({
 });
 
 type IntegrationInput = z.infer<typeof integrationSchema>;
-
-interface ChangeManagerRule {
-  name: string;
-  action: string;
-  sources: string[];
-  destinations: string[];
-  services: string[];
-  sourceZone?: string;
-  destinationZone?: string;
-  description?: string;
-  enabled: boolean;
-  status: string;
-  migrationSource: {
-    projectId: string;
-    projectName: string;
-    sourceVendor: string;
-    targetVendor: string;
-    translationConfidence: number;
-    originalRuleName: string;
-    translatedConfig: string;
-  };
-}
 
 export const POST = apiHandler<IntegrationInput>(
   async ({ body, organizationId }) => {
@@ -81,7 +62,7 @@ export const POST = apiHandler<IntegrationInput>(
     }
 
     // Build Change Manager-compatible rule payloads
-    const rules: ChangeManagerRule[] = project.translatedRules.map((tr) => {
+    const rules: ChangeManagerRulePayload[] = project.translatedRules.map((tr) => {
       const nr = tr.normalizedRule;
       const sources = Array.isArray(nr.sources) ? (nr.sources as string[]) : [];
       const destinations = Array.isArray(nr.destinations)
@@ -100,8 +81,8 @@ export const POST = apiHandler<IntegrationInput>(
         sourceZone: nr.sourceZone || undefined,
         destinationZone: nr.destinationZone || undefined,
         description: body.description
-          ? `${body.description} | Migrated from ${project.sourceVendor}`
-          : `Migrated from ${project.sourceVendor} via FW Migrate`,
+          ? `${body.description} | Migrated from ${vendorLabel(project.sourceVendor)}`
+          : `Migrated from ${vendorLabel(project.sourceVendor)} with FW Migrate`,
         enabled: nr.enabled,
         status: "pending_review",
         migrationSource: {
@@ -119,74 +100,9 @@ export const POST = apiHandler<IntegrationInput>(
       };
     });
 
-    // Push rules to Change Manager API
-    const pushResults: Array<{
-      ruleName: string;
-      status: "success" | "failed";
-      changeManagerRuleId?: string;
-      error?: string;
-    }> = [];
-
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const rule of rules) {
-      try {
-        const response = await fetch(`${changeManagerApiUrl}/api/rules/import`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Source": "fwmigrate",
-            "X-Migration-Project": project.id,
-          },
-          body: JSON.stringify(rule),
-          signal: AbortSignal.timeout(10000),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          pushResults.push({
-            ruleName: rule.name,
-            status: "success",
-            changeManagerRuleId: data.id || data.ruleId,
-          });
-          successCount++;
-        } else {
-          const errorText = await response.text().catch(() => "Unknown error");
-          pushResults.push({
-            ruleName: rule.name,
-            status: "failed",
-            error: `HTTP ${response.status}: ${errorText.substring(0, 200)}`,
-          });
-          failCount++;
-        }
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        pushResults.push({
-          ruleName: rule.name,
-          status: "failed",
-          error: errorMsg,
-        });
-        failCount++;
-      }
-    }
-
-    logger.info("Change Manager integration completed", {
-      projectId: project.id,
-      totalRules: rules.length,
-      success: successCount,
-      failed: failCount,
-    });
-
-    return NextResponse.json({
-      projectId: project.id,
-      projectName: project.name,
-      totalRules: rules.length,
-      success: successCount,
-      failed: failCount,
-      results: pushResults,
-      changeManagerUrl: changeManagerApiUrl,
-    });
+    // The shared client sends CHANGE_MANAGER_API_KEY as a bearer token
+    const result = await pushRulesToChangeManager(rules, project.id, project.name);
+    return NextResponse.json(result);
   },
   { schema: integrationSchema },
 );

@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  */
@@ -23,7 +22,7 @@ type ExplainInput = z.infer<typeof explainSchema>;
 
 /**
  * POST /api/v1/ai/explain
- * Get an AI-powered explanation for a specific rule translation.
+ * Get an LLM explanation for a specific rule translation (optional, labelled as AI).
  * Requires the rule to already have a translated rule record.
  */
 export const POST = apiHandler<ExplainInput>(

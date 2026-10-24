@@ -73,7 +73,7 @@ export function OverviewView({ data, today }: { data: OverviewData; today: strin
         </label>
       </div>
 
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2 xl:grid-cols-[1.25fr_.75fr_1.1fr]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,.75fr)_minmax(0,1.1fr)]">
         <ActivityTile activity={data.activity} />
 
         <div className="grid gap-3">
@@ -100,7 +100,7 @@ export function OverviewView({ data, today }: { data: OverviewData; today: strin
         <ReadinessTile project={focus} />
       </div>
 
-      <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-[1.6fr_1fr]">
+      <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <section className="card p-[18px]" aria-labelledby="queue-h">
           <div className="mb-3.5 flex items-center justify-between">
             <h2 id="queue-h" className="!text-base">Review queue</h2>
@@ -387,7 +387,7 @@ function Legend({
 const QUEUE_PILL: Record<QueueItem["state"], { cls: string; label: string; stroke: string }> = {
   flagged: { cls: "b-red", label: "Flagged", stroke: "var(--red)" },
   risk: { cls: "b-red", label: "Risk", stroke: "var(--red)" },
-  flag: { cls: "b-amber", label: "Flag", stroke: "var(--amber)" },
+  flag: { cls: "b-amber", label: "Check", stroke: "var(--amber)" },
   ok: { cls: "b-teal", label: "OK", stroke: "var(--teal)" },
 };
 
