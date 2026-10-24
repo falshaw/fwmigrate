@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ProjectHeader } from "@/components/ProjectHeader";
+import { ProjectHeader, type ProjectSummary } from "@/components/ProjectHeader";
+import { ZoneMappingCard } from "@/components/ZoneMappingCard";
 
 interface ExplainState {
   status: string;
@@ -35,6 +36,8 @@ export default function TranslatePage() {
   const [withExplanations, setWithExplanations] = useState(true);
   const [result, setResult] = useState<TranslateResult | null>(null);
   const [explain, setExplain] = useState<ExplainState | null>(null);
+  const [project, setProject] = useState<ProjectSummary | null>(null);
+  const [zonesChanged, setZonesChanged] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -85,13 +88,28 @@ export default function TranslatePage() {
     }
     const data: TranslateResult = await res.json();
     setResult(data);
+    setZonesChanged(false);
     setExplain(data.explain);
     if (data.explain?.status === "running") startPolling();
   }
 
   return (
     <div>
-      <ProjectHeader projectId={projectId} step="translate" title="Translate rules" />
+      <ProjectHeader
+        projectId={projectId}
+        step="translate"
+        title="Translate rules"
+        onLoad={setProject}
+      />
+
+      {project && (
+        <ZoneMappingCard
+          projectId={projectId}
+          sourceVendor={project.sourceVendor}
+          targetVendor={project.targetVendor}
+          onSaved={() => setZonesChanged(true)}
+        />
+      )}
 
       <div className="card grid max-w-3xl gap-5 p-5 sm:p-6">
         <p className="text-[13px] text-ink-65">
@@ -124,6 +142,12 @@ export default function TranslatePage() {
           <div className="alert alert-error" role="alert">
             {error}
           </div>
+        )}
+
+        {zonesChanged && (
+          <p className="text-[13px] text-amber-ink" role="status">
+            Zone mappings saved. Translate again to apply them to the rules.
+          </p>
         )}
 
         <div>

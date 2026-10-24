@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  */
@@ -7,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/apiHandler";
 import prisma from "@/lib/prisma";
+import { recordStatusChange } from "@/lib/projectHistory";
 import { notFound, badRequest } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { analyzeRuleset, SEVERITY_RANK, type IssueSeverity } from "@/lib/analysis/RuleAnalysisEngine";
@@ -65,7 +65,7 @@ const SEVERITY_SCORE: Record<string, number> = {
  * Analysis does not change rules, so it never moves the project status back.
  */
 export const POST = apiHandler(
-  async ({ params, organizationId }) => {
+  async ({ params, organizationId, user }) => {
     const project = await prisma.migrationProject.findUnique({
       where: { id: params.id },
       include: {
@@ -157,6 +157,8 @@ export const POST = apiHandler(
           ]
         : []),
     ]);
+
+    if (status !== project.status) await recordStatusChange(params.id, status, user.id);
 
     // Build category counts
     const issuesByCategory: Record<string, number> = {};

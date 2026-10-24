@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  */
@@ -7,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/apiHandler";
 import prisma from "@/lib/prisma";
+import { recordStatusChange } from "@/lib/projectHistory";
 import { notFound, badRequest } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { updateRuleReviewSchema } from "@/lib/validators/project";
@@ -109,6 +109,7 @@ export const PATCH = apiHandler<UpdateRuleReviewInput>(
         where: { id: params.id },
         data: { status },
       });
+      await recordStatusChange(params.id, status, user.id);
     }
 
     logger.info("Rule review updated", {

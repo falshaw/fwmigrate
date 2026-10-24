@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  *
@@ -30,6 +29,8 @@ export interface VendorInfo {
   sourceFormat: string;
   /** Output format the generator emits */
   targetFormat: string;
+  /** What a rule's from/to refers to on this vendor (zone mapping UI) */
+  zoneTerm: string;
 }
 
 export const VENDORS: Record<FirewallVendor, VendorInfo> = {
@@ -39,6 +40,7 @@ export const VENDORS: Record<FirewallVendor, VendorInfo> = {
     label: "Palo Alto Networks (PAN-OS)",
     sourceFormat: "XML config export or set commands",
     targetFormat: "set commands",
+    zoneTerm: "zone",
   },
   CISCO_ASA: {
     id: "CISCO_ASA",
@@ -46,6 +48,7 @@ export const VENDORS: Record<FirewallVendor, VendorInfo> = {
     label: "Cisco ASA",
     sourceFormat: "show running-config",
     targetFormat: "CLI (objects, ACLs, access-group)",
+    zoneTerm: "interface nameif",
   },
   CHECKPOINT: {
     id: "CHECKPOINT",
@@ -53,6 +56,7 @@ export const VENDORS: Record<FirewallVendor, VendorInfo> = {
     label: "Check Point (R80+)",
     sourceFormat: "Management API JSON (show access-rulebase)",
     targetFormat: "mgmt_cli commands",
+    zoneTerm: "security zone object",
   },
   FORTINET: {
     id: "FORTINET",
@@ -60,6 +64,7 @@ export const VENDORS: Record<FirewallVendor, VendorInfo> = {
     label: "Fortinet FortiGate (FortiOS)",
     sourceFormat: "FortiOS CLI config",
     targetFormat: "FortiOS CLI config",
+    zoneTerm: "interface or zone",
   },
   JUNIPER_SRX: {
     id: "JUNIPER_SRX",
@@ -67,6 +72,7 @@ export const VENDORS: Record<FirewallVendor, VendorInfo> = {
     label: "Juniper SRX (Junos)",
     sourceFormat: "set commands",
     targetFormat: "set commands",
+    zoneTerm: "security zone",
   },
 };
 
