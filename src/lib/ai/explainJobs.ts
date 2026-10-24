@@ -16,7 +16,7 @@ import { Prisma } from "@/generated/prisma";
 import { logger } from "@/lib/logger";
 import type { FirewallVendor, NormalizedRule } from "@/lib/parsers/types";
 import { explainWithLlm } from "./TranslationAI";
-import { llmModel, llmProvider } from "./OllamaClient";
+import { llmModel, llmProvider, withModelBatch } from "./OllamaClient";
 
 export interface ExplainItem {
   translatedRuleId: string;
@@ -128,7 +128,9 @@ export function startExplainJob(
     }
   };
 
-  void Promise.all(Array.from({ length: Math.min(concurrency, queue.length || 1) }, worker))
+  void withModelBatch(() =>
+    Promise.all(Array.from({ length: Math.min(concurrency, queue.length || 1) }, worker)),
+  )
     .catch((error) =>
       logger.error("Explain job crashed", {
         projectId,
