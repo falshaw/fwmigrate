@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  *
@@ -14,19 +13,18 @@ import prisma from "@/lib/prisma";
 import { notFound, badRequest } from "@/lib/errors";
 import { validateConfig } from "@/lib/validation/ConfigValidator";
 import { logger } from "@/lib/logger";
+import { buildTargetConfig } from "@/lib/export/targetConfig";
 
 export const POST = apiHandler(async ({ params, organizationId }) => {
   const project = await prisma.migrationProject.findUnique({
     where: { id: params.projectId },
     include: {
       translatedRules: {
-        include: {
-          normalizedRule: {
-            select: { position: true, name: true },
-          },
-        },
+        include: { normalizedRule: true },
         orderBy: { normalizedRule: { position: "asc" } },
       },
+      normalizedObjects: true,
+      zoneMappings: true,
     },
   });
 
@@ -40,43 +38,22 @@ export const POST = apiHandler(async ({ params, organizationId }) => {
     );
   }
 
-  // Build combined config from translated rules
-  const configLines: string[] = [];
-  for (const tr of project.translatedRules) {
-    const config =
-      tr.reviewStatus === "MODIFIED" && tr.manualOverride
-        ? tr.manualOverride
-        : tr.targetConfig;
-    configLines.push(config);
-    configLines.push("");
-  }
-  const combinedConfig = configLines.join("\n");
-
-  // Run validation
-  const result = validateConfig(combinedConfig, project.targetVendor);
-
-  // Enrich issues with rule names where possible
-  const enrichedIssues = result.issues.map((issue) => {
-    if (issue.line) {
-      // Find which translated rule this line belongs to
-      let currentLine = 0;
-      for (const tr of project.translatedRules) {
-        const config =
-          tr.reviewStatus === "MODIFIED" && tr.manualOverride
-            ? tr.manualOverride
-            : tr.targetConfig;
-        const ruleLines = config.split("\n").length + 1; // +1 for the blank line
-        if (issue.line <= currentLine + ruleLines) {
-          return {
-            ...issue,
-            rule: tr.normalizedRule?.name || undefined,
-          };
-        }
-        currentLine += ruleLines;
-      }
-    }
-    return issue;
+  // Validate what the export would produce: the approved rules once the
+  // review has started, every translated rule before that. Objects included,
+  // so references can be checked.
+  const approved = project.translatedRules.filter((t) =>
+    ["APPROVED", "MODIFIED"].includes(t.reviewStatus),
+  );
+  const scope = approved.length ? approved : project.translatedRules;
+  const { config } = await buildTargetConfig({
+    targetVendor: project.targetVendor,
+    translatedRules: scope,
+    normalizedObjects: project.normalizedObjects,
+    zoneMappings: project.zoneMappings,
   });
+
+  const result = validateConfig(config, project.targetVendor);
+  const enrichedIssues = result.issues;
 
   const errorIssues = enrichedIssues.filter((i) => i.severity === "error");
   const warningIssues = enrichedIssues.filter((i) => i.severity === "warning");
@@ -101,7 +78,8 @@ export const POST = apiHandler(async ({ params, organizationId }) => {
     projectId: project.id,
     projectName: project.name,
     targetVendor: project.targetVendor,
-    rulesValidated: project.translatedRules.length,
+    rulesValidated: scope.length,
+    scope: approved.length ? "approved" : "translated",
   };
 
   logger.info("Project config validation completed", {

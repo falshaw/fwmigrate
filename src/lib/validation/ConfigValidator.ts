@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  *
@@ -8,6 +7,7 @@
  */
 
 import type { FirewallVendor } from "../parsers/types";
+import { referenceProblems } from "./references";
 
 export interface ValidationIssue {
   severity: "error" | "warning" | "info";
@@ -489,192 +489,13 @@ function validateGeneric(config: string): ValidationIssue[] {
     }
   }
 
-  // Check for duplicate lines (potential duplicate rules)
-  const nonEmptyLines = lines.filter(
-    (l) => l.trim() && !l.trim().startsWith("!"),
-  );
-  const seen = new Set<string>();
-  for (const line of nonEmptyLines) {
-    if (seen.has(line.trim())) {
-      issues.push({
-        severity: "warning",
-        message: `Duplicate config line: "${line.trim().substring(0, 80)}..."`,
-        suggestion: "Check for unintentionally duplicated rules",
-      });
-    }
-    seen.add(line.trim());
-  }
-
   return issues;
 }
 
-// ============================================================================
-// Cross-Rule Validation: Shadowed Rules Detection
-// ============================================================================
-
-interface ExtractedRule {
-  line: number;
-  name: string;
-  action: string;
-  sources: string[];
-  destinations: string[];
-  services: string[];
-}
-
-function extractRulesFromConfig(
-  config: string,
-  vendor: string,
-): ExtractedRule[] {
-  const rules: ExtractedRule[] = [];
-  const lines = config.split("\n");
-
-  if (vendor === "CISCO_ASA") {
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (line.startsWith("access-list") && line.includes("extended")) {
-        const parts = line.split(/\s+/);
-        const actionIdx = parts.indexOf("extended") + 1;
-        if (actionIdx > 0 && actionIdx < parts.length) {
-          const action = parts[actionIdx];
-          // Simplified extraction: protocol src dst
-          const remaining = parts.slice(actionIdx + 1);
-          rules.push({
-            line: i + 1,
-            name: parts[1] || `line-${i + 1}`,
-            action,
-            sources: remaining.length > 1 ? [remaining[1]] : ["any"],
-            destinations: remaining.length > 3 ? [remaining[3]] : ["any"],
-            services: remaining.length > 0 ? [remaining[0]] : ["ip"],
-          });
-        }
-      }
-    }
-  } else if (vendor === "FORTINET") {
-    let currentRule: Partial<ExtractedRule> | null = null;
-    let editLine = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (line.startsWith("edit ") && line.match(/edit\s+\d+/)) {
-        editLine = i + 1;
-        currentRule = {
-          line: editLine,
-          sources: [],
-          destinations: [],
-          services: [],
-        };
-      } else if (line === "next" && currentRule) {
-        if (currentRule.action) {
-          rules.push(currentRule as ExtractedRule);
-        }
-        currentRule = null;
-      } else if (currentRule) {
-        if (line.startsWith("set name"))
-          currentRule.name = line.replace("set name ", "").replace(/"/g, "");
-        if (line.startsWith("set action"))
-          currentRule.action = line.split(/\s+/)[2];
-        if (line.startsWith("set srcaddr"))
-          currentRule.sources = line
-            .replace("set srcaddr ", "")
-            .replace(/"/g, "")
-            .split(/\s+/);
-        if (line.startsWith("set dstaddr"))
-          currentRule.destinations = line
-            .replace("set dstaddr ", "")
-            .replace(/"/g, "")
-            .split(/\s+/);
-        if (line.startsWith("set service"))
-          currentRule.services = line
-            .replace("set service ", "")
-            .replace(/"/g, "")
-            .split(/\s+/);
-      }
-    }
-  } else if (vendor === "PALO_ALTO") {
-    // PAN-OS set commands: track rules by name
-    const ruleMap = new Map<string, ExtractedRule>();
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      const ruleMatch = line.match(/set rulebase security rules (\S+)\s+(.*)/);
-      if (ruleMatch) {
-        const ruleName = ruleMatch[1];
-        if (!ruleMap.has(ruleName)) {
-          ruleMap.set(ruleName, {
-            line: i + 1,
-            name: ruleName,
-            action: "",
-            sources: [],
-            destinations: [],
-            services: [],
-          });
-        }
-        const rule = ruleMap.get(ruleName)!;
-        const rest = ruleMatch[2];
-        if (rest.startsWith("action ")) rule.action = rest.split(/\s+/)[1];
-        if (rest.startsWith("source ")) rule.sources.push(rest.split(/\s+/)[1]);
-        if (rest.startsWith("destination "))
-          rule.destinations.push(rest.split(/\s+/)[1]);
-        if (rest.startsWith("application ") || rest.startsWith("service "))
-          rule.services.push(rest.split(/\s+/)[1]);
-      }
-    }
-    rules.push(...ruleMap.values());
-  }
-
-  return rules;
-}
-
-function isSubsetOrEqual(subset: string[], superset: string[]): boolean {
-  if (
-    superset.includes("any") ||
-    superset.includes("all") ||
-    superset.includes("ALL")
-  )
-    return true;
-  if (subset.length === 0 || superset.length === 0) return false;
-  return subset.every(
-    (s) => superset.includes(s) || s === "any" || s === "all",
-  );
-}
-
-function detectShadowedRules(
-  config: string,
-  vendor: string,
-): ValidationIssue[] {
-  const issues: ValidationIssue[] = [];
-  const rules = extractRulesFromConfig(config, vendor);
-
-  for (let i = 1; i < rules.length; i++) {
-    for (let j = 0; j < i; j++) {
-      const earlier = rules[j];
-      const current = rules[i];
-
-      // A rule is shadowed if an earlier rule matches the same or superset of traffic
-      const srcShadowed = isSubsetOrEqual(current.sources, earlier.sources);
-      const dstShadowed = isSubsetOrEqual(
-        current.destinations,
-        earlier.destinations,
-      );
-      const svcShadowed = isSubsetOrEqual(current.services, earlier.services);
-
-      if (
-        srcShadowed &&
-        dstShadowed &&
-        svcShadowed &&
-        earlier.action !== current.action
-      ) {
-        issues.push({
-          severity: "warning",
-          line: current.line,
-          rule: current.name || `Rule at line ${current.line}`,
-          message: `Rule may be shadowed by earlier rule "${earlier.name || `line ${earlier.line}`}" (${earlier.action}) — this rule's action (${current.action}) will never apply`,
-          suggestion: `Review rule ordering. Move more specific rules before broader rules, or remove the shadowed rule.`,
-        });
-      }
-    }
-  }
-
-  return issues;
-}
+// Rule order (shadowed, redundant, conflicting rules) is not judged here: a
+// text-level comparison cannot resolve groups, zones or disabled rules and gave
+// more wrong warnings than right ones. The Analysis step does it on resolved
+// objects.
 
 // ============================================================================
 // Zone Reference Validation
@@ -792,19 +613,23 @@ export function validateConfig(
       vendorIssues = [];
   }
 
-  // Run cross-rule shadowing detection
-  const shadowIssues = detectShadowedRules(config, vendor);
+  // Objects, groups and services a rule uses must exist on the device
+  const refIssues: ValidationIssue[] = referenceProblems(config, vendor).map((p) => ({
+    severity: p.severity,
+    message:
+      p.severity === "error"
+        ? `Undefined reference: ${p.ref}`
+        : `Not applied: ${p.ref}`,
+    suggestion:
+      p.severity === "error"
+        ? "Define the object in the config (or use a predefined one); the device rejects a rule that references an unknown name, even a disabled rule."
+        : "Bind the access list to an interface with access-group, or remove it.",
+  }));
 
   // Run zone reference validation
   const zoneIssues = validateZoneReferences(config, vendor);
 
-  // Combine and deduplicate
-  const allIssues = [
-    ...vendorIssues,
-    ...genericIssues,
-    ...shadowIssues,
-    ...zoneIssues,
-  ];
+  const allIssues = [...vendorIssues, ...genericIssues, ...refIssues, ...zoneIssues];
   const errors = allIssues.filter((i) => i.severity === "error").length;
   const warnings = allIssues.filter((i) => i.severity === "warning").length;
 
