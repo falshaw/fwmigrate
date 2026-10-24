@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  *
@@ -14,6 +13,7 @@ import {
   GenContext,
   analyseRule,
   confidenceFrom,
+  disableReason,
   describeRule,
   prefixToMask,
   unknownAddressWarning,
@@ -126,7 +126,7 @@ export class CiscoASAGenerator extends BaseGenerator {
     const action = rule.action === "permit" ? "permit" : "deny";
     let ace = `access-list ${acl} extended ${action} ${proto} ${src} ${dst}${portPart}`;
     if (rule.logging) ace += " log";
-    if (!rule.enabled || facts.forceDisable) ace += " inactive";
+    if (!rule.enabled || disableReason(facts, unknown)) ace += " inactive";
 
     const remark = [rule.name, rule.description, facts.services.applications.length ? `App-ID: ${facts.services.applications.join(", ")}` : ""]
       .filter(Boolean)
