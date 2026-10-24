@@ -46,7 +46,7 @@ export default function NewProjectPage() {
       <PageHeader
         eyebrow="Projects"
         title="New migration"
-        subtitle="Name the project and pick the source and target vendor. You paste the config next."
+        subtitle="Name the project and pick the source and target vendor. Next you drop or paste the source config."
       />
 
       <form onSubmit={handleSubmit} className="card grid gap-5 p-5 sm:p-6">

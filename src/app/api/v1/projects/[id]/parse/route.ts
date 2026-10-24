@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  */
@@ -7,10 +6,12 @@
 import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/apiHandler";
 import prisma from "@/lib/prisma";
+import { recordStatusChange } from "@/lib/projectHistory";
 import { notFound, badRequest } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { getParser } from "@/lib/parsers/ParserFactory";
 import type { FirewallVendor } from "@/lib/parsers/types";
+import { vendorLabel } from "@/lib/vendors";
 
 /**
  * POST /api/v1/projects/[id]/parse
@@ -19,7 +20,7 @@ import type { FirewallVendor } from "@/lib/parsers/types";
  * Updates project counts, confidence, and status.
  */
 export const POST = apiHandler(
-  async ({ params, organizationId }) => {
+  async ({ params, organizationId, user }) => {
     const project = await prisma.migrationProject.findUnique({
       where: { id: params.id },
       include: { sourceConfig: true },
@@ -35,15 +36,36 @@ export const POST = apiHandler(
       );
     }
 
-    await prisma.migrationProject.update({
-      where: { id: params.id },
-      data: { status: "PARSING" },
-    });
-
     logger.parser.run(project.sourceVendor, "start", { projectId: params.id });
 
+    // Parse before touching the project: a config the parser cannot read must
+    // not move the project forward or leave an empty "Parsed" project behind.
+    const vendor = vendorLabel(project.sourceVendor);
     const parser = getParser(project.sourceVendor as FirewallVendor);
-    const result = await parser.parse(project.sourceConfig.rawConfig);
+    let result: Awaited<ReturnType<typeof parser.parse>>;
+    try {
+      result = await parser.parse(project.sourceConfig.rawConfig);
+    } catch (err) {
+      logger.parser.run(project.sourceVendor, "error", {
+        projectId: params.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return NextResponse.json(
+        { error: `The config could not be read as a ${vendor} config. Check the file, or create a project with the right source vendor.` },
+        { status: 422 },
+      );
+    }
+
+    if (result.rules.length === 0) {
+      logger.parser.run(project.sourceVendor, "error", { projectId: params.id, error: "no rules" });
+      return NextResponse.json(
+        {
+          error: `No security rules found. The config does not look like a ${vendor} config, or it has no security policy. Import the right file, or create a project with the right source vendor.`,
+          objectCount: result.objects.length,
+        },
+        { status: 422 },
+      );
+    }
 
     // Delete any previous parsed data from a prior parse attempt
     await prisma.$transaction([
@@ -114,6 +136,8 @@ export const POST = apiHandler(
         parseConfidence: result.confidence,
       },
     });
+
+    await recordStatusChange(params.id, "PARSED", user.id);
 
     // Update source config parse log
     await prisma.sourceConfig.update({
