@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  */
@@ -7,9 +6,13 @@
 import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/apiHandler";
 import prisma from "@/lib/prisma";
+import { recordStatusChange } from "@/lib/projectHistory";
 import { notFound, badRequest } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { importConfigSchema } from "@/lib/validators/project";
+import { getParser } from "@/lib/parsers/ParserFactory";
+import type { FirewallVendor } from "@/lib/parsers/types";
+import { vendorLabel } from "@/lib/vendors";
 import type { ImportConfigInput } from "@/lib/validators/project";
 
 /**
@@ -51,7 +54,7 @@ const MAX_IMPORT_SIZE = 20 * 1024 * 1024;
  * Creates a SourceConfig record and updates project status to IMPORTING.
  */
 export const POST = apiHandler<ImportConfigInput>(
-  async ({ body, params, organizationId }) => {
+  async ({ body, params, organizationId, user }) => {
     // Defense-in-depth: check raw config size before any DB operations
     const fileSize = Buffer.byteLength(body.rawConfig, "utf8");
     if (fileSize > MAX_IMPORT_SIZE) {
@@ -62,17 +65,60 @@ export const POST = apiHandler<ImportConfigInput>(
 
     const project = await prisma.migrationProject.findUnique({
       where: { id: params.id },
-      select: { id: true, organizationId: true, sourceConfig: true },
+      select: { id: true, organizationId: true, sourceVendor: true, sourceConfig: true },
     });
 
     if (!project) return notFound("Project not found");
     if (project.organizationId !== organizationId)
       return notFound("Project not found");
 
-    if (project.sourceConfig) {
-      return badRequest(
-        "Project already has an imported config. Delete and re-import to replace.",
+    // Check the config with the project's parser before anything is stored or
+    // replaced: a wrong-vendor or empty config changes nothing.
+    const vendor = vendorLabel(project.sourceVendor);
+    let ruleCount = 0;
+    try {
+      const probe = await getParser(project.sourceVendor as FirewallVendor).parse(body.rawConfig);
+      ruleCount = probe.rules.length;
+    } catch {
+      ruleCount = 0;
+    }
+    if (ruleCount === 0) {
+      return NextResponse.json(
+        {
+          error: `No security rules found. This does not look like a ${vendor} config, or it has no security policy. Import the right file, or create a project with the right source vendor.`,
+        },
+        { status: 422 },
       );
+    }
+
+    if (project.sourceConfig) {
+      if (!body.replace) {
+        return NextResponse.json(
+          {
+            error:
+              "Project already has an imported config. Import again with replace to discard it and everything derived from it.",
+          },
+          { status: 409 },
+        );
+      }
+      // Everything below was derived from the old config. Zone mappings and the
+      // review history (versions) are kept.
+      await prisma.$transaction([
+        prisma.translatedRule.deleteMany({ where: { projectId: params.id } }),
+        prisma.analysisResult.deleteMany({ where: { projectId: params.id } }),
+        prisma.validationResult.deleteMany({ where: { projectId: params.id } }),
+        prisma.migrationPlan.deleteMany({ where: { projectId: params.id } }),
+        prisma.normalizedNATRule.deleteMany({ where: { projectId: params.id } }),
+        prisma.normalizedObject.deleteMany({ where: { projectId: params.id } }),
+        prisma.normalizedRule.deleteMany({ where: { projectId: params.id } }),
+        prisma.sourceConfig.delete({ where: { projectId: params.id } }),
+        prisma.migrationProject.update({
+          where: { id: params.id },
+          data: { ruleCount: 0, objectCount: 0, natRuleCount: 0, parseConfidence: null },
+        }),
+      ]);
+      logger.info("Config replaced", { projectId: params.id });
+      await recordStatusChange(params.id, "CREATED", user.id, "Config replaced: parse, analysis, translation and review discarded");
     }
 
     const configType = body.configType || detectConfigType(body.rawConfig);

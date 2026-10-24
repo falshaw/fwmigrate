@@ -54,16 +54,16 @@ export default function ImportPage() {
     setLoading(true);
     setError("");
 
-    // Import
+    // Import (replaces the current config when the project already has one)
     let res = await fetch(`/api/v1/projects/${projectId}/import`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rawConfig: config }),
+      body: JSON.stringify({ rawConfig: config, replace: hasConfig }),
     });
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(`Import failed: ${data.detail || data.error || res.status}`);
+      setError(data.detail || data.error || `Import failed (HTTP ${res.status})`);
       setLoading(false);
       return;
     }
@@ -74,7 +74,7 @@ export default function ImportPage() {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(`Parse failed: ${data.detail || data.error || res.status}`);
+      setError(data.detail || data.error || `Parse failed (HTTP ${res.status})`);
       setLoading(false);
       return;
     }
@@ -84,6 +84,7 @@ export default function ImportPage() {
 
   const expected = project?.sourceVendor;
   const mismatch = loaded?.vendor && expected && loaded.vendor !== expected;
+  const hasConfig = !!project && project.status !== "CREATED";
 
   return (
     <div>
@@ -151,9 +152,19 @@ export default function ImportPage() {
           <div className="alert alert-warn" role="status">
             <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <span>
-              <b>{loaded.name}</b> looks like a {vendorShort(loaded.vendor!)} config, but this
-              project&apos;s source is {vendorShort(expected!)}. Parsing will likely fail; create a
-              project with the right source vendor instead.
+              <b>{loaded.name}</b> looks like {vendorShort(loaded.vendor!)}, but this
+              project&apos;s source is {vendorShort(expected!)}. The import will be refused; choose
+              the right file, or create a project with that source vendor.
+            </span>
+          </div>
+        )}
+
+        {hasConfig && (
+          <div className="alert alert-warn" role="status">
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span>
+              This project already has a config. Importing a new one replaces it and discards
+              the analysis, translation and review decisions. Zone mappings are kept.
             </span>
           </div>
         )}
@@ -185,7 +196,11 @@ export default function ImportPage() {
             {config ? config.split("\n").length : 0} lines
           </span>
           <button onClick={handleImportAndParse} disabled={loading} className="btn btn-primary">
-            {loading ? "Importing and parsing…" : "Import and parse"}
+            {loading
+              ? "Importing and parsing…"
+              : hasConfig
+                ? "Replace config and parse"
+                : "Import and parse"}
           </button>
         </div>
       </div>

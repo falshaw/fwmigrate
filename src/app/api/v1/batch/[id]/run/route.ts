@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  *
@@ -11,6 +10,7 @@ import { apiHandler } from "@/lib/apiHandler";
 import prisma from "@/lib/prisma";
 import { notFound, badRequest } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { vendorLabel } from "@/lib/vendors";
 import { getParser } from "@/lib/parsers/ParserFactory";
 import { getGenerator } from "@/lib/generators/GeneratorFactory";
 import type { FirewallVendor } from "@/lib/parsers/types";
@@ -66,6 +66,16 @@ export const POST = apiHandler(
         const sourceVendor = config.sourceVendor as FirewallVendor;
         const targetVendor = config.targetVendor as FirewallVendor;
 
+        // Parse first: a config without rules (wrong vendor, empty export)
+        // fails here and leaves no empty project behind.
+        const parser = getParser(sourceVendor);
+        const parseResult = await parser.parse(config.rawConfig);
+        if (parseResult.rules.length === 0) {
+          throw new Error(
+            `No security rules found. This does not look like a ${vendorLabel(sourceVendor)} config, or it has no security policy.`,
+          );
+        }
+
         // Create project
         const project = await prisma.migrationProject.create({
           data: {
@@ -100,9 +110,6 @@ export const POST = apiHandler(
           where: { id: project.id },
           data: { status: "PARSING" },
         });
-
-        const parser = getParser(sourceVendor);
-        const parseResult = await parser.parse(config.rawConfig);
 
         // Store normalized rules
         if (parseResult.rules.length > 0) {

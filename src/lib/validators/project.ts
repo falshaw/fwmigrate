@@ -1,5 +1,4 @@
 /**
- * FW Migrate - AI-Powered Firewall Migration Platform
  * Copyright (c) 2026 Nick Falshaw
  * SPDX-License-Identifier: MIT
  */
@@ -28,6 +27,8 @@ export const importConfigSchema = z.object({
       `Config exceeds maximum size of ${MAX_CONFIG_SIZE / (1024 * 1024)}MB`,
     ),
   configType: z.enum(["xml", "text", "json", "set"]).optional(),
+  // Replace an already imported config (discards parse, analysis, translation and review)
+  replace: z.boolean().optional(),
 });
 
 const projectStatusEnum = z.enum([
