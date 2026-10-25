@@ -229,6 +229,8 @@ export interface RuleFacts {
   penalty: number;
   /** The rule must be emitted disabled: its match criteria could not be resolved */
   forceDisable: boolean;
+  /** The source rule filters no traffic (ASA ACL without access-group): emitted disabled */
+  notApplied: boolean;
 }
 
 /**
@@ -287,18 +289,25 @@ export function analyseRule(
     penalty += 0.05;
   }
 
+  const notApplied = rule.rawVendorData?.notApplied === true;
+  if (notApplied) {
+    warnings.push(
+      `REVIEW: access list ${String(rule.rawVendorData?.aclName ?? "")} is not applied with access-group on the source, so it filters no transit traffic there — rule emitted DISABLED; enable it only if the ACL is meant to become a live policy.`,
+    );
+  }
+
   const anySrc = rule.sources.every(isAnyToken);
   const anyDst = rule.destinations.every(isAnyToken);
   if (rule.enabled && rule.action === "permit" && anySrc && anyDst && services.any) {
     warnings.push("REVIEW: permit any/any/any — overly permissive.");
   }
 
-  return { services, warnings, penalty, forceDisable };
+  return { services, warnings, penalty, forceDisable, notApplied };
 }
 
 export function confidenceFrom(facts: RuleFacts, extraPenalty = 0, unknownAddrs = 0): number {
-  // Emitted disabled (unresolved service or undefined address): needs a human.
-  if (facts.forceDisable || unknownAddrs > 0) return 0.3;
+  // Emitted disabled (unresolved service, undefined address, unapplied ACL): needs a human.
+  if (facts.forceDisable || facts.notApplied || unknownAddrs > 0) return 0.3;
   const c = 0.95 - facts.penalty - extraPenalty - unknownAddrs * 0.2;
   return Math.max(0.1, Math.min(0.95, Math.round(c * 100) / 100));
 }
@@ -314,12 +323,13 @@ export function unknownAddressWarning(unknown: string[]): string[] {
  * Why the migration emits this rule disabled, or "" when it does not. A rule
  * whose service could not be resolved, or that references an address defined
  * nowhere, would be rejected by the target (or match the wrong traffic), so it
- * is never emitted live.
+ * is never emitted live. Neither is a rule that filters no traffic on the source.
  */
 export function disableReason(facts: RuleFacts, unknown: string[], verb = "disabled"): string {
   if (facts.forceDisable) return `REVIEW: service unresolved, ${verb} by migration`;
   if (unknown.length)
     return `REVIEW: address ${[...new Set(unknown)].join(", ")} not defined, ${verb} by migration`;
+  if (facts.notApplied) return `REVIEW: source ACL not applied, ${verb} by migration`;
   return "";
 }
 

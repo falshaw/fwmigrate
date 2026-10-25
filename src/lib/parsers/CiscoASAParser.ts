@@ -230,11 +230,22 @@ export class CiscoASAParser implements IConfigParser {
     let position = 0;
 
     // access-group <acl> in interface <nameif>  -> ingress zone of the ACL
-    const aclIface = new Map<string, string>();
+    // access-group <acl> out interface <nameif> -> egress zone of the ACL
+    // access-group <acl> global                 -> applied, no zone
+    // An ACL with no access-group filters no transit traffic on the ASA (it is
+    // unused, or matches traffic for VPN, NAT or QoS), so its rules are marked
+    // and never emitted live on the target.
+    const aclIn = new Map<string, string>();
+    const aclOut = new Map<string, string>();
+    const applied = new Set<string>();
     for (const l of lines) {
-      const g = l.trim().match(/^access-group\s+(\S+)\s+in\s+interface\s+(\S+)/);
-      if (g) aclIface.set(g[1], g[2]);
+      const g = l.trim().match(/^access-group\s+(\S+)\s+(?:(in|out)\s+interface\s+(\S+)|global)/);
+      if (!g) continue;
+      applied.add(g[1]);
+      if (g[2] === "in") aclIn.set(g[1], g[3]);
+      else if (g[2] === "out") aclOut.set(g[1], g[3]);
     }
+    const unbound = new Map<string, number>();
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -273,21 +284,30 @@ export class CiscoASAParser implements IConfigParser {
       const { src, dst } = parsed;
       const service = svcObject ? [svcObject] : parsed.service;
 
+      const isApplied = applied.has(aclName);
+      if (!isApplied) unbound.set(aclName, (unbound.get(aclName) ?? 0) + 1);
+
       rules.push({
         name: `${aclName}-${position}`,
         position,
         enabled: !/\sinactive(\s|$)/.test(line),
-        sourceZone: aclIface.get(aclName),
+        sourceZone: aclIn.get(aclName),
+        destinationZone: aclOut.get(aclName),
         action: action as "permit" | "deny",
         sources: src,
         destinations: dst,
         services: service,
         description: `ACL: ${aclName}`,
         logging: line.includes(" log"),
-        rawVendorData: { aclName, originalLine: line },
+        rawVendorData: { aclName, originalLine: line, ...(isApplied ? {} : { notApplied: true }) },
       });
     }
 
+    for (const [acl, n] of unbound)
+      log.push({
+        level: "warn",
+        message: `ACL ${acl} is not applied with access-group: its ${n} rule${n === 1 ? "" : "s"} filter no transit traffic on the ASA and will be emitted disabled`,
+      });
     log.push({ level: "info", message: `Parsed ${rules.length} ACL rules` });
     return rules;
   }

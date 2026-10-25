@@ -60,7 +60,8 @@ export class CiscoASAGenerator extends BaseGenerator {
 
     const { acl, iface } = this.aclFor(rule, ctx);
     const bindings = (ctx.meta.get("bindings") as Map<string, string | undefined>) ?? new Map();
-    bindings.set(acl, iface);
+    // An ACL the source never applied stays unbound on the target too.
+    if (!facts.notApplied) bindings.set(acl, iface);
     ctx.meta.set("bindings", bindings);
     if (acl === GLOBAL_ACL)
       warnings.push(
