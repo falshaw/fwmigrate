@@ -101,11 +101,12 @@ function asa(config: string): ReferenceProblem[] {
   const groups = new Set<string>();
   for (const m of config.matchAll(/^object (?:network|service) (\S+)/gm)) objects.add(m[1]);
   for (const m of config.matchAll(/^object-group (?:network|service|protocol|icmp-type) (\S+)/gm)) groups.add(m[1]);
+  // ACLs with at least one active entry; an all-inactive ACL needs no binding
   const acls = new Set<string>();
   for (const line of config.split("\n")) {
     const ace = line.match(/^access-list (\S+) extended /);
     if (!ace) continue;
-    acls.add(ace[1]);
+    if (!/\sinactive$/.test(line.trimEnd())) acls.add(ace[1]);
     for (const m of line.matchAll(/\bobject (\S+)/g)) if (!objects.has(m[1])) problems.push(err(`object ${m[1]}`));
     for (const m of line.matchAll(/\bobject-group (\S+)/g)) if (!groups.has(m[1])) problems.push(err(`object-group ${m[1]}`));
   }

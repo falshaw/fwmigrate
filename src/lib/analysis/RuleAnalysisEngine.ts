@@ -3,8 +3,9 @@
  * SPDX-License-Identifier: MIT
  *
  * Rule Analysis Engine: shadowed, duplicate, redundant, conflicting,
- * overlapping and overly permissive rules, plus disabled rules and rules
- * that reference undefined objects.
+ * overlapping and overly permissive rules, plus disabled rules, rules
+ * that reference undefined objects and Cisco ASA access lists that are not
+ * applied with access-group (they filter nothing on the source).
  *
  * Every rule is first resolved (ObjectResolver): address objects, nested
  * address groups, service objects/groups and PAN-OS App-IDs become IPv4
@@ -32,7 +33,8 @@ export type IssueType =
   | "conflict"
   | "permissive"
   | "disabled"
-  | "unresolved";
+  | "unresolved"
+  | "unapplied";
 
 export interface RuleIssue {
   type: IssueType;
@@ -56,6 +58,7 @@ export interface AnalysisOutput {
     permissive: number;
     disabled: number;
     unresolved: number;
+    unapplied: number;
   };
 }
 
@@ -186,7 +189,9 @@ export function analyzeRuleset(
   const issues: RuleIssue[] = [];
 
   const resolved = sorted.map((r) => resolveRule(r, index));
-  const active = resolved.filter((r) => r.rule.enabled);
+  const notApplied = (r: NormalizedRule) => r.rawVendorData?.notApplied === true;
+  // Unapplied ACL rules match nothing on the source, like disabled ones.
+  const active = resolved.filter((r) => r.rule.enabled && !notApplied(r.rule));
 
   for (const r of resolved) {
     if (!r.rule.enabled) {
@@ -197,6 +202,18 @@ export function analyzeRuleset(
         ruleName: r.rule.name,
         description: `Rule ${q(r.rule.name)} is disabled and matches no traffic`,
         recommendation: "Leave it out of the migration, or document why it is kept",
+      });
+      continue;
+    }
+    if (notApplied(r.rule)) {
+      const acl = String(r.rule.rawVendorData?.aclName ?? "");
+      issues.push({
+        type: "unapplied",
+        severity: allows(r.rule) ? "high" : "medium",
+        rulePosition: r.rule.position,
+        ruleName: r.rule.name,
+        description: `Rule ${q(r.rule.name)} belongs to access list ${q(acl)}, which no access-group applies: it filters no transit traffic on the source. Migrated as a live policy it would ${allows(r.rule) ? "permit" : "block"} traffic the source never ${allows(r.rule) ? "permitted" : "blocked"}`,
+        recommendation: `Check where ${q(acl)} is used (VPN, NAT, QoS or nowhere); the migration emits it disabled. Enable it only if it is meant to become a policy`,
       });
       continue;
     }
@@ -337,6 +354,7 @@ export function analyzeRuleset(
       permissive: count("permissive"),
       disabled: count("disabled"),
       unresolved: count("unresolved"),
+      unapplied: count("unapplied"),
     },
   };
 }

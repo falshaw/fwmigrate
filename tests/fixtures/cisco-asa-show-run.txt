@@ -88,6 +88,10 @@ nat (inside,outside) dynamic interface
 nat (dmz,outside) static 198.51.100.10
 nat (inside,dmz) static 192.0.2.50 203.0.113.50
 !
+access-group OUTSIDE_IN in interface outside
+access-group INSIDE_OUT in interface inside
+access-group DMZ_IN in interface dmz
+!
 route outside 0.0.0.0 0.0.0.0 198.51.100.2 1
 route inside 10.0.0.0 255.0.0.0 192.0.2.2 1
 !
