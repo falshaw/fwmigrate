@@ -6,7 +6,12 @@
  * applications and zone-pair (or global) security policies.
  */
 
-import type { RollbackCommand, ZoneMapping } from "./GeneratorInterface";
+import type {
+  GenerateOptions,
+  GeneratorResult,
+  RollbackCommand,
+  ZoneMapping,
+} from "./GeneratorInterface";
 import type { FirewallVendor, NormalizedObject, NormalizedRule } from "../parsers/types";
 import {
   BaseGenerator,
@@ -37,6 +42,34 @@ export class JuniperSRXGenerator extends BaseGenerator {
     if (from && to)
       return { prefix: `set security policies from-zone ${from} to-zone ${to} policy ${name}`, global: false, from, to };
     return { prefix: `set security policies global policy ${name}`, global: true, from: from ?? "any", to: to ?? "any" };
+  }
+
+  /**
+   * The SRX evaluates every zone policy before any global policy. A global
+   * policy that sat above a zone-specific rule in the source loses that
+   * precedence on the target, so it is flagged.
+   */
+  async generate(
+    rules: NormalizedRule[],
+    objects: NormalizedObject[],
+    zoneMappings: ZoneMapping[],
+    options: GenerateOptions = {},
+  ): Promise<GeneratorResult> {
+    const out = await super.generate(rules, objects, zoneMappings, options);
+    const ctx = new GenContext(objects, zoneMappings);
+    const live = out.ruleConfigs.map((rc) => !/^deactivate /m.test(rc.config));
+    const global = rules.map((r) => this.policyPrefix(r, ctx).global);
+    out.ruleConfigs.forEach((rc, i) => {
+      if (!global[i] || !live[i]) return;
+      const later = rules.filter((_, j) => j > i && !global[j] && live[j]).map((r) => r.name);
+      if (!later.length) return;
+      const names = later.slice(0, 3).join(", ") + (later.length > 3 ? ` and ${later.length - 3} more` : "");
+      rc.warnings.push(
+        `REVIEW: the SRX evaluates global policies after all zone policies, but this rule comes before ${later.length} zone-specific rule${later.length === 1 ? "" : "s"} (${names}) in the source; traffic both match now hits the zone policy first — check the order.`,
+      );
+      rc.confidence = Math.max(0.1, Math.round((rc.confidence - 0.25) * 100) / 100);
+    });
+    return out;
   }
 
   protected translateRule(rule: NormalizedRule, ctx: GenContext): RuleTranslation {
