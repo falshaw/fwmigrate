@@ -6,19 +6,9 @@ import type { OverviewProject } from "@/lib/dashboard";
 import { vendorShort } from "@/lib/vendors";
 import { projectStatusBadge } from "@/lib/ui/rules";
 import { DeleteProjectButton } from "./DeleteProjectButton";
+import { LocalTime } from "./LocalTime";
 
 const nf = new Intl.NumberFormat("en-GB");
-
-/** Stable on server and client (fixed locale and time zone). */
-export function formatUpdated(iso: string) {
-  return new Date(iso).toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "UTC",
-  });
-}
 
 /**
  * Projects table: the whole row opens the project, the name is the keyboard link.
@@ -76,7 +66,7 @@ export function ProjectsTable({
                   <span className={`badge ${badge.cls}`}>{badge.label}</span>
                 </td>
                 <td className="hidden text-xs whitespace-nowrap text-ink-65 lg:table-cell">
-                  {formatUpdated(p.updatedAt)}
+                  <LocalTime iso={p.updatedAt} />
                 </td>
                 {canDelete && (
                   // Clicks inside the cell (and its dialog) must not open the project

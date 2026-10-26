@@ -17,6 +17,7 @@ import {
 import { VENDOR_LIST } from "@/lib/vendors";
 import { PageHeader } from "@/components/ProjectHeader";
 import { CONFIG_FILE_ACCEPT } from "@/lib/ui/config-file";
+import { LocalTime } from "@/components/LocalTime";
 
 const vendorOptions = VENDOR_LIST.map((v) => ({ value: v.id, label: v.label }));
 
@@ -407,7 +408,7 @@ export default function ValidatePage() {
                       {v.warningCount} warnings
                     </span>
                     <span className="text-[11px] text-ink-45">
-                      {new Date(v.validatedAt).toLocaleString()}
+                      <LocalTime iso={v.validatedAt} seconds />
                     </span>
                   </div>
                 ))}

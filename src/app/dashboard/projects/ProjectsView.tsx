@@ -8,7 +8,7 @@ import { VENDOR_LIST, vendorShort } from "@/lib/vendors";
 import { projectStatusBadge } from "@/lib/ui/rules";
 import { PageHeader } from "@/components/ProjectHeader";
 import { ProjectsTable } from "@/components/ProjectsTable";
-import { useCanEdit } from "@/components/RoleContext";
+import { useCanEdit, useRole } from "@/components/RoleContext";
 
 const nf = new Intl.NumberFormat("en-GB");
 
@@ -24,14 +24,10 @@ const ACTIVE = [
 ];
 const DONE = ["APPROVED", "EXPORTED"];
 
-export function ProjectsView({
-  projects,
-  canDelete = false,
-}: {
-  projects: OverviewProject[];
-  canDelete?: boolean;
-}) {
+export function ProjectsView({ projects }: { projects: OverviewProject[] }) {
   const canEdit = useCanEdit();
+  // Deleting is admin-only in the API; only admins see the button
+  const canDelete = useRole() === "ADMIN";
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const q = query.trim().toLowerCase();

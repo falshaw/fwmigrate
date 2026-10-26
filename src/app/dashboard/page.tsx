@@ -12,12 +12,5 @@ export default async function DashboardPage() {
   if (!organizationId) redirect("/login");
 
   const data = await loadOverview(organizationId);
-  const today = new Date().toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  });
-
-  return <OverviewView data={data} today={today} />;
+  return <OverviewView data={data} />;
 }

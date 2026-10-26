@@ -58,6 +58,9 @@ export const authConfig: NextAuthConfig = {
         return true;
 
       if (!isLoggedIn) {
+        // API clients get a status code, not the login page
+        if (pathname.startsWith("/api/"))
+          return Response.json({ error: "Unauthorized" }, { status: 401 });
         const loginUrl = new URL("/login", request.nextUrl);
         loginUrl.searchParams.set("callbackUrl", pathname);
         return Response.redirect(loginUrl);
