@@ -91,7 +91,6 @@ export default function ValidatePage() {
   // Load projects that have translated rules
   useEffect(() => {
     if (tab === "project") {
-      setLoadingProjects(true);
       fetch("/api/v1/projects")
         .then((r) => r.json())
         .then((data) => {
@@ -217,6 +216,8 @@ export default function ValidatePage() {
         </button>
         <button
           onClick={() => {
+            // The effect loads the projects whenever the tab changes to project
+            if (tab !== "project") setLoadingProjects(true);
             setTab("project");
             setResult(null);
           }}
