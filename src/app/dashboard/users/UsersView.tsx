@@ -208,7 +208,7 @@ export function UsersView({ myId }: { myId: string }) {
       ) : !users ? (
         <div className="skeleton h-40" aria-busy="true" />
       ) : (
-        <div className="card overflow-x-auto">
+        <div className="card relative overflow-x-auto">
           <table className="data-table">
             <thead>
               <tr>
