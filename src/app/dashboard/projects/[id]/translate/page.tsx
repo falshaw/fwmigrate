@@ -20,10 +20,13 @@ interface TranslateResult {
   translatedCount: number;
   averageConfidence: number;
   rulesWithReviewFlags: number;
-  durationMs: number;
+  /** Set right after a run on this page */
+  durationMs?: number;
+  /** Set when the page shows the stored translation */
+  reviewed?: number;
   changedRules?: number;
   unchangedRules?: number;
-  explain: ExplainState;
+  explain?: ExplainState;
 }
 
 export default function TranslatePage() {
@@ -47,6 +50,8 @@ export default function TranslatePage() {
       .then((r) => r.json())
       .then((d) => {
         setLlmEnabled(!!d.llm?.enabled);
+        // An earlier translation stays visible when the page is opened again
+        if (d.translation) setResult((r) => r ?? d.translation);
         if (d.explain?.status === "running") {
           setExplain(d.explain ? { ...d.explain, provider: d.explain.provider ?? d.llm?.provider } : d.explain);
           startPolling();
@@ -91,7 +96,7 @@ export default function TranslatePage() {
     const data: TranslateResult = await res.json();
     setResult(data);
     setZonesChanged(false);
-    setExplain(data.explain);
+    setExplain(data.explain ?? null);
     if (data.explain?.status === "running") startPolling();
   }
 
@@ -173,7 +178,9 @@ export default function TranslatePage() {
                 ["Translated", String(result.translatedCount)],
                 ["Translation confidence (avg)", `${Math.round(result.averageConfidence * 100)}%`],
                 ["Review flags", String(result.rulesWithReviewFlags)],
-                ["Duration", `${result.durationMs} ms`],
+                typeof result.durationMs === "number"
+                  ? ["Duration", `${result.durationMs} ms`]
+                  : ["Reviewed", `${result.reviewed ?? 0} / ${result.translatedCount}`],
               ].map(([label, value]) => (
                 <div key={label} className="rounded-xl border border-g-line bg-g-bg px-3.5 py-3">
                   <b className="block text-lg font-bold">{value}</b>

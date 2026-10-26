@@ -15,6 +15,8 @@ const TRANSIENT = new Set(["IMPORTING", "PARSING", "ANALYZING", "TRANSLATING"]);
 /**
  * Record that the project reached `toStatus`. The "from" side is the last
  * recorded status, so transient states never show up in the history.
+ * `event` names what happened when the status alone would mislead (a config
+ * replace returns the project to CREATED but is not a new project).
  * Never throws: history must not break the step that triggered it.
  */
 export async function recordStatusChange(
@@ -22,6 +24,7 @@ export async function recordStatusChange(
   toStatus: string,
   userId: string,
   note?: string,
+  event?: string,
 ): Promise<void> {
   if (TRANSIENT.has(toStatus)) return;
   try {
@@ -50,7 +53,13 @@ export async function recordStatusChange(
         version: (last?.version ?? 0) + 1,
         fromStatus,
         toStatus,
-        snapshot: { ...project, translatedCount: translated, approvedCount: approved, ...(note ? { note } : {}) },
+        snapshot: {
+          ...project,
+          translatedCount: translated,
+          approvedCount: approved,
+          ...(note ? { note } : {}),
+          ...(event ? { event } : {}),
+        },
         changedById: userId,
       },
     });
