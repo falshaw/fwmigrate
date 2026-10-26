@@ -54,11 +54,18 @@ export const updateProjectSchema = z
   })
   .strict();
 
-export const updateRuleReviewSchema = z.object({
-  reviewStatus: z.enum(["APPROVED", "MODIFIED", "SKIPPED", "FLAGGED"]),
-  reviewerNote: z.string().max(2000).optional(),
-  manualOverride: z.string().max(50000).optional(),
-});
+export const updateRuleReviewSchema = z
+  .object({
+    reviewStatus: z.enum(["APPROVED", "MODIFIED", "SKIPPED", "FLAGGED"]),
+    /** Omitted: the stored note is kept. Empty string: the note is removed. */
+    reviewerNote: z.string().max(2000).optional(),
+    /** The engineer's own target config; required for MODIFIED, ignored otherwise */
+    manualOverride: z.string().max(50000).optional(),
+  })
+  .refine((b) => b.reviewStatus !== "MODIFIED" || !!b.manualOverride?.trim(), {
+    message: "A modified rule needs its changed config",
+    path: ["manualOverride"],
+  });
 
 export const zoneMappingSchema = z.object({
   mappings: z.array(

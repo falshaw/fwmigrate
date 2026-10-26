@@ -11,11 +11,13 @@ import {
   readConfigFile,
   type ConfigFile,
 } from "@/lib/ui/config-file";
+import { ReadOnlyNote, useCanEdit } from "@/components/RoleContext";
 
 export default function ImportPage() {
   const params = useParams();
   const router = useRouter();
   const projectId = params.id as string;
+  const canEdit = useCanEdit();
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [config, setConfig] = useState("");
   const [loaded, setLoaded] = useState<ConfigFile | null>(null);
@@ -195,13 +197,17 @@ export default function ImportPage() {
           <span className="font-mono text-xs text-ink-45">
             {config ? config.split("\n").length : 0} lines
           </span>
-          <button onClick={handleImportAndParse} disabled={loading} className="btn btn-primary">
-            {loading
-              ? "Importing and parsing…"
-              : hasConfig
-                ? "Replace config and parse"
-                : "Import and parse"}
-          </button>
+          {canEdit ? (
+            <button onClick={handleImportAndParse} disabled={loading} className="btn btn-primary">
+              {loading
+                ? "Importing and parsing…"
+                : hasConfig
+                  ? "Replace config and parse"
+                  : "Import and parse"}
+            </button>
+          ) : (
+            <ReadOnlyNote action="import a config" />
+          )}
         </div>
       </div>
     </div>

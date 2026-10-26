@@ -10,9 +10,17 @@ import { getSession } from "./session";
 import { applyRateLimit, RATE_LIMITS, type RateLimitConfig } from "./rateLimit";
 import { logger } from "./logger";
 
+/** Roles that may change data. VIEWER reads only. */
+export const WRITE_ROLES: Role[] = ["ADMIN", "CONSULTANT"];
+export const ALL_ROLES: Role[] = ["ADMIN", "CONSULTANT", "VIEWER"];
+
 interface ApiHandlerOptions<T> {
   schema?: ZodSchema<T>;
   auth?: boolean;
+  /**
+   * Roles allowed to call the route. Default: every role for GET/HEAD,
+   * WRITE_ROLES for every other method.
+   */
   roles?: Role[];
   rateLimit?: RateLimitConfig | false;
   rateLimitPrefix?: string;
@@ -74,8 +82,12 @@ export function apiHandler<T = unknown>(
         }
         user = session.user as UserContext;
 
-        if (roles && !roles.includes(user.role)) {
-          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        const allowed = roles ?? (req.method === "GET" || req.method === "HEAD" ? undefined : WRITE_ROLES);
+        if (allowed && !allowed.includes(user.role)) {
+          return NextResponse.json(
+            { error: `Your role (${user.role.toLowerCase()}) cannot do this` },
+            { status: 403 },
+          );
         }
       }
 

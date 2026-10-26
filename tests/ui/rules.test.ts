@@ -61,4 +61,9 @@ describe("ruleState", () => {
     expect(ruleState({ warnings: ["note: logging differs"] })).toBe("ok");
     expect(ruleState({})).toBe("ok");
   });
+
+  it("marks a rule with an analysis finding as flag, not ok", () => {
+    expect(ruleState({ analysisNotes: "Redundant: #7 duplicates #3" })).toBe("flag");
+    expect(ruleState({ analysisNotes: "" })).toBe("ok");
+  });
 });

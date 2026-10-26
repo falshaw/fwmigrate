@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import { VENDOR_LIST, vendorShort } from "@/lib/vendors";
 import { PageHeader } from "@/components/ProjectHeader";
+import { ReadOnlyNote, useCanEdit } from "@/components/RoleContext";
 
 const vendors = VENDOR_LIST.map((v) => ({ value: v.id, label: v.label }));
 
@@ -16,6 +17,7 @@ export default function NewProjectPage() {
     sourceVendor: "",
     targetVendor: "",
   });
+  const canEdit = useCanEdit();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -40,6 +42,16 @@ export default function NewProjectPage() {
     const data = await res.json();
     router.push(`/dashboard/projects/${data.id}/import`);
   }
+
+  if (!canEdit)
+    return (
+      <div className="max-w-2xl">
+        <PageHeader eyebrow="Projects" title="New migration" />
+        <div className="card p-5">
+          <ReadOnlyNote action="create a migration" />
+        </div>
+      </div>
+    );
 
   return (
     <div className="max-w-2xl">

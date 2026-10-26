@@ -8,7 +8,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { apiHandler } from "@/lib/apiHandler";
+import { apiHandler, ALL_ROLES } from "@/lib/apiHandler";
 import prisma from "@/lib/prisma";
 import { notFound, badRequest } from "@/lib/errors";
 import { validateConfig } from "@/lib/validation/ConfigValidator";
@@ -91,7 +91,8 @@ export const POST = apiHandler(async ({ params, organizationId }) => {
   });
 
   return NextResponse.json(enrichedResult);
-});
+  // A check with a history entry; it changes no project data, so viewers may run it
+}, { roles: ALL_ROLES });
 
 export const GET = apiHandler(async ({ params, organizationId }) => {
   const project = await prisma.migrationProject.findUnique({

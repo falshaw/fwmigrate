@@ -58,6 +58,8 @@ export interface RuleStateInput {
   isOverlyPermissive?: boolean | null;
   riskScore?: number | null;
   warnings?: string[] | null;
+  /** Findings of the analysis step ("Shadow: …"), joined with " | " */
+  analysisNotes?: string | null;
 }
 
 /** Risk score is 1-10 from the analysis step; 7+ counts as risky. */
@@ -67,10 +69,14 @@ export function isRisky(r: RuleStateInput): boolean {
   return !!r.isOverlyPermissive || (r.riskScore ?? 0) >= RISKY_SCORE;
 }
 
-/** risk = over-permissive or high risk score; flag = translator asks for review. */
+/**
+ * risk = over-permissive or high risk score; flag = the translator asks for
+ * review or the analysis found something (duplicate, overlap, …).
+ */
 export function ruleState(r: RuleStateInput): RuleState {
   if (isRisky(r)) return "risk";
   if ((r.warnings ?? []).some((w) => w.startsWith("REVIEW:"))) return "flag";
+  if (r.analysisNotes?.trim()) return "flag";
   return "ok";
 }
 

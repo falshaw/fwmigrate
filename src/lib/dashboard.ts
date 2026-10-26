@@ -146,6 +146,7 @@ export async function loadOverview(organizationId: string): Promise<OverviewData
             destinations: true,
             isOverlyPermissive: true,
             riskScore: true,
+            analysisNotes: true,
           },
         },
       },
@@ -179,6 +180,7 @@ export async function loadOverview(organizationId: string): Promise<OverviewData
               isOverlyPermissive: n.isOverlyPermissive,
               riskScore: n.riskScore,
               warnings,
+              analysisNotes: n.analysisNotes,
             });
       const review = warnings.find((w) => w.startsWith("REVIEW:"));
       const detail = review

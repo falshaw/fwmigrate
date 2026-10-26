@@ -6,7 +6,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { apiHandler } from "@/lib/apiHandler";
+import { apiHandler, ALL_ROLES } from "@/lib/apiHandler";
 import { validateConfig } from "@/lib/validation/ConfigValidator";
 import { logger } from "@/lib/logger";
 import { z } from "zod";
@@ -35,5 +35,6 @@ export const POST = apiHandler<ValidateInput>(
 
     return NextResponse.json(result);
   },
-  { schema: validateSchema },
+  // Read-only check (nothing is stored), so viewers may use it too
+  { schema: validateSchema, roles: ALL_ROLES },
 );

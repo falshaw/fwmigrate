@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
@@ -14,16 +14,21 @@ import {
   Menu,
   X,
   LogOut,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import { LogoMark } from "@/components/AppBackground";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { useRole } from "@/components/RoleContext";
 
 type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
   match: (path: string) => boolean;
+  /** Hidden for viewers (the page only creates data) */
+  write?: boolean;
+  adminOnly?: boolean;
 };
 
 const isProjectPage = (p: string) =>
@@ -47,6 +52,7 @@ const MAIN: NavItem[] = [
     label: "New migration",
     icon: Plus,
     match: (p) => p === "/dashboard/projects/new",
+    write: true,
   },
   {
     href: "/dashboard/batch",
@@ -69,7 +75,20 @@ const TOOLS: NavItem[] = [
     icon: Send,
     match: (p) => p.startsWith("/dashboard/integrate"),
   },
+  {
+    href: "/dashboard/users",
+    label: "Users",
+    icon: Users,
+    match: (p) => p.startsWith("/dashboard/users"),
+    adminOnly: true,
+  },
 ];
+
+const ROLE_LABEL: Record<string, string> = {
+  ADMIN: "Admin",
+  CONSULTANT: "Consultant",
+  VIEWER: "Viewer (read only)",
+};
 
 function initials(name: string) {
   const parts = name.split(/[\s@._-]+/).filter(Boolean);
@@ -83,6 +102,9 @@ function NavLinks({
   pathname: string;
   onNavigate?: () => void;
 }) {
+  const role = useRole();
+  const visible = (item: NavItem) =>
+    !(item.write && role === "VIEWER") && !(item.adminOnly && role !== "ADMIN");
   const render = (item: NavItem) => {
     const on = item.match(pathname);
     const Icon = item.icon;
@@ -101,16 +123,26 @@ function NavLinks({
   };
   return (
     <>
-      {MAIN.map(render)}
+      {MAIN.filter(visible).map(render)}
       <div className="eyebrow mx-3 mt-3.5 mb-1">Tools</div>
-      {TOOLS.map(render)}
+      {TOOLS.filter(visible).map(render)}
     </>
   );
 }
 
 export function Sidebar({ name, email }: { name: string; email: string }) {
   const pathname = usePathname();
+  const role = useRole();
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
 
   const userBlock = (
     <div className="flex items-center gap-2.5 min-w-0">
@@ -127,6 +159,7 @@ export function Sidebar({ name, email }: { name: string; email: string }) {
             {email}
           </div>
         )}
+        <div className="text-xs text-ink-45">{ROLE_LABEL[role] ?? role}</div>
       </div>
     </div>
   );

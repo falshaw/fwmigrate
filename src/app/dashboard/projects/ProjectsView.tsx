@@ -8,6 +8,7 @@ import { VENDOR_LIST, vendorShort } from "@/lib/vendors";
 import { projectStatusBadge } from "@/lib/ui/rules";
 import { PageHeader } from "@/components/ProjectHeader";
 import { ProjectsTable } from "@/components/ProjectsTable";
+import { useCanEdit } from "@/components/RoleContext";
 
 const nf = new Intl.NumberFormat("en-GB");
 
@@ -30,6 +31,7 @@ export function ProjectsView({
   projects: OverviewProject[];
   canDelete?: boolean;
 }) {
+  const canEdit = useCanEdit();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const q = query.trim().toLowerCase();
@@ -79,9 +81,11 @@ export function ProjectsView({
         title="Projects"
         subtitle="Every migration project, most recently updated first."
         actions={
-          <Link href="/dashboard/projects/new" className="btn btn-primary btn-sm">
-            <Plus className="h-4 w-4" aria-hidden /> New migration
-          </Link>
+          canEdit && (
+            <Link href="/dashboard/projects/new" className="btn btn-primary btn-sm">
+              <Plus className="h-4 w-4" aria-hidden /> New migration
+            </Link>
+          )
         }
       />
 
@@ -145,9 +149,11 @@ export function ProjectsView({
             <p className="mt-1 text-[13px] text-ink-65">
               Create a project, paste a source config and translate it to another vendor.
             </p>
-            <Link href="/dashboard/projects/new" className="btn btn-primary btn-sm mt-5">
-              <Plus className="h-4 w-4" aria-hidden /> New migration
-            </Link>
+            {canEdit && (
+              <Link href="/dashboard/projects/new" className="btn btn-primary btn-sm mt-5">
+                <Plus className="h-4 w-4" aria-hidden /> New migration
+              </Link>
+            )}
           </div>
         ) : shown.length === 0 ? (
           <p className="px-[18px] pt-4 pb-8 text-center text-[13px] text-ink-65" role="status">
