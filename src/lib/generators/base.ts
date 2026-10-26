@@ -333,6 +333,16 @@ export function disableReason(facts: RuleFacts, unknown: string[], verb = "disab
   return "";
 }
 
+/**
+ * The config disables the rule: FortiOS `set status disable`, PAN-OS
+ * `disabled yes`, ASA `inactive`, Junos `deactivate`, Check Point
+ * `enabled false`. The migration emits rules disabled when they cannot run
+ * safely (undefined address, unresolved service, unapplied ACL).
+ */
+export function configDisablesRule(config: string): boolean {
+  return /set status disable\b|\bdisabled yes\b|^access-list .* inactive$|^deactivate |\benabled false\b/m.test(config);
+}
+
 export function describeRule(
   rule: NormalizedRule,
   facts: RuleFacts,

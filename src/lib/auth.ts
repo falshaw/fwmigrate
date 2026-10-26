@@ -28,6 +28,14 @@ class AccountLocked extends CredentialsSignin {
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
   debug: false,
+  // A failed sign-in is an expected event, not a server error
+  logger: {
+    error(error) {
+      const type = (error as { type?: string }).type ?? error.name;
+      if (type === "CredentialsSignin") logger.info("Sign-in refused", { code: (error as { code?: string }).code });
+      else logger.error("Auth.js error", { type, error: error.message });
+    },
+  },
   secret: process.env.AUTH_SECRET,
   adapter: PrismaAdapter(prisma) as Adapter,
   providers: [
