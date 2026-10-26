@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { VENDORS, vendorShort, type FirewallVendor } from "@/lib/vendors";
+import { useCanEdit } from "@/components/RoleContext";
 
 interface ZoneMapping {
   sourceZone: string;
@@ -24,6 +25,7 @@ export function ZoneMappingCard({
   targetVendor: string;
   onSaved?: () => void;
 }) {
+  const canEdit = useCanEdit();
   const [zones, setZones] = useState<string[] | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -112,6 +114,7 @@ export function ZoneMappingCard({
                 className="input font-mono"
                 value={values[z] ?? ""}
                 maxLength={63}
+                readOnly={!canEdit}
                 onChange={(e) => {
                   setValues({ ...values, [z]: e.target.value });
                   setSaved(false);
@@ -128,7 +131,7 @@ export function ZoneMappingCard({
         </div>
       )}
 
-      {zones && zones.length > 0 && (
+      {zones && zones.length > 0 && canEdit && (
         <div className="flex items-center gap-3">
           <button onClick={save} disabled={saving} className="btn btn-ghost btn-sm">
             {saving ? "Saving…" : "Save zone mapping"}

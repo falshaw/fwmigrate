@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { AppBackground } from "@/components/AppBackground";
 import { Sidebar } from "@/components/Sidebar";
+import { RoleProvider, type UserRole } from "@/components/RoleContext";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export default async function DashboardLayout({
   if (!session?.user) redirect("/login");
 
   return (
-    <>
+    <RoleProvider role={(session.user.role ?? "VIEWER") as UserRole}>
       <AppBackground />
       <div className="mx-auto flex max-w-[1340px] flex-col gap-3 p-4 lg:flex-row lg:items-start lg:gap-[18px] lg:px-6 lg:py-7">
         <Sidebar
@@ -25,6 +26,6 @@ export default async function DashboardLayout({
           {children}
         </main>
       </div>
-    </>
+    </RoleProvider>
   );
 }

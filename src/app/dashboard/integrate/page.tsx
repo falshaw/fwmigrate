@@ -19,6 +19,7 @@ import { VENDOR_LIST } from "@/lib/vendors";
 import { PageHeader } from "@/components/ProjectHeader";
 import { projectStatusBadge } from "@/lib/ui/rules";
 import { pushBlockReason } from "@/lib/ui/change-manager";
+import { useCanEdit } from "@/components/RoleContext";
 
 interface ConnectionStatus {
   configured: boolean;
@@ -65,6 +66,7 @@ const vendorLabels: Record<string, string> = Object.fromEntries(
 export default function IntegratePage() {
   const [status, setStatus] = useState<ConnectionStatus | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
+  const canEdit = useCanEdit();
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
   const [pushing, setPushing] = useState<string | null>(null);
@@ -367,7 +369,9 @@ export default function IntegratePage() {
         ) : (
           <div className="space-y-3">
             {projects.map((project) => {
-              const blocked = pushBlockReason(project.status, status);
+              const blocked = canEdit
+                ? pushBlockReason(project.status, status)
+                : "Read only: a consultant or admin pushes the rules.";
               const canPush = !blocked;
               const reasonId = `push-reason-${project.id}`;
 

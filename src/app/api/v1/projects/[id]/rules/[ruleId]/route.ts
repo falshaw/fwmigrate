@@ -53,7 +53,9 @@ export const GET = apiHandler(async ({ params, organizationId }) => {
 /**
  * PATCH /api/v1/projects/[id]/rules/[ruleId]
  * Update the review status of a translated rule.
- * Sets reviewStatus, reviewerNote, manualOverride, reviewedAt, and reviewedById.
+ * Sets reviewStatus, reviewedAt and reviewedById. manualOverride is stored for
+ * MODIFIED and cleared for every other decision (approve = the generated
+ * config); reviewerNote is kept unless the request sends one.
  */
 export const PATCH = apiHandler<UpdateRuleReviewInput>(
   async ({ body, params, user, organizationId }) => {
@@ -89,8 +91,10 @@ export const PATCH = apiHandler<UpdateRuleReviewInput>(
       where: { id: rule.translatedRule.id },
       data: {
         reviewStatus: body.reviewStatus,
-        reviewerNote: body.reviewerNote ?? null,
-        manualOverride: body.manualOverride ?? null,
+        ...(body.reviewerNote !== undefined && {
+          reviewerNote: body.reviewerNote.trim() || null,
+        }),
+        manualOverride: body.reviewStatus === "MODIFIED" ? body.manualOverride!.trim() : null,
         reviewedAt: new Date(),
         reviewedById: user.id,
       },

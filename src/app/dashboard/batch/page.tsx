@@ -18,6 +18,7 @@ import { VENDOR_LIST } from "@/lib/vendors";
 import { PageHeader } from "@/components/ProjectHeader";
 import { detectVendor } from "@/lib/ui/detect-vendor";
 import { CONFIG_FILE_ACCEPT } from "@/lib/ui/config-file";
+import { useCanEdit } from "@/components/RoleContext";
 
 interface BatchConfig {
   filename: string;
@@ -54,6 +55,7 @@ const vendorLabels: Record<string, string> = Object.fromEntries(
 
 export default function BatchMigrationPage() {
   const [batches, setBatches] = useState<BatchMigration[]>([]);
+  const canEdit = useCanEdit();
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
@@ -239,13 +241,15 @@ export default function BatchMigrationPage() {
         title="Batch migration"
         subtitle="Import several configs, translate them in one run, download all results."
         actions={
-          <button
-            onClick={() => setShowCreate(!showCreate)}
-            className="btn btn-primary btn-sm"
-            aria-expanded={showCreate}
-          >
-            <Plus className="w-4 h-4" aria-hidden /> New batch
-          </button>
+          canEdit && (
+            <button
+              onClick={() => setShowCreate(!showCreate)}
+              className="btn btn-primary btn-sm"
+              aria-expanded={showCreate}
+            >
+              <Plus className="w-4 h-4" aria-hidden /> New batch
+            </button>
+          )
         }
       />
 
@@ -256,7 +260,7 @@ export default function BatchMigrationPage() {
       )}
 
       {/* Create Form */}
-      {showCreate && (
+      {showCreate && canEdit && (
         <div className="card p-5 mb-4">
           <h2 className="!text-base mb-4">
             Create batch migration
@@ -613,7 +617,7 @@ export default function BatchMigrationPage() {
                 <StatusBadge status={batch.status} />
 
                 <div className="flex gap-2">
-                  {batch.status === "pending" && (
+                  {batch.status === "pending" && canEdit && (
                     <button
                       onClick={() => handleRun(batch.id)}
                       disabled={running === batch.id}

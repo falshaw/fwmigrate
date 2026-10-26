@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { TriangleAlert } from "lucide-react";
 import { ProjectHeader, type ProjectSummary } from "@/components/ProjectHeader";
+import { ReadOnlyNote, useCanEdit } from "@/components/RoleContext";
 import { CodeBlock } from "@/components/CodeBlock";
 import { vendorShort } from "@/lib/vendors";
 import {
@@ -39,7 +40,15 @@ interface NormalizedRuleWithTranslation {
     warnings?: string[] | null;
     confidence: number;
     reviewStatus: string;
+    reviewerNote?: string | null;
+    manualOverride?: string | null;
   };
+}
+
+/** Extra fields sent with a decision */
+interface ReviewExtra {
+  reviewerNote?: string;
+  manualOverride?: string;
 }
 
 type Rule = NormalizedRuleWithTranslation & {
@@ -105,13 +114,13 @@ export default function ReviewPage() {
       });
   }, [projectId, attempt]);
 
-  async function reviewRule(normalizedRuleId: string, status: string) {
+  async function reviewRule(normalizedRuleId: string, status: string, extra: ReviewExtra = {}) {
     setSaving(true);
     setSaveError("");
     const res = await fetch(`/api/v1/projects/${projectId}/rules/${normalizedRuleId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reviewStatus: status }),
+      body: JSON.stringify({ reviewStatus: status, ...extra }),
     }).catch(() => null);
     setSaving(false);
     // Only show the decision once the server has stored it.
@@ -124,12 +133,18 @@ export default function ReviewPage() {
       );
       return;
     }
+    const saved = (await res.json().catch(() => null)) as NormalizedRuleWithTranslation | null;
     setRules((prev) =>
       prev.map((r) =>
         r.id === normalizedRuleId
           ? {
               ...r,
-              translatedRule: { ...r.translatedRule!, reviewStatus: status },
+              translatedRule: {
+                ...r.translatedRule!,
+                reviewStatus: status,
+                reviewerNote: saved?.translatedRule?.reviewerNote ?? null,
+                manualOverride: saved?.translatedRule?.manualOverride ?? null,
+              },
             }
           : r,
       ),
@@ -226,6 +241,7 @@ export default function ReviewPage() {
                   isOverlyPermissive: rule.isOverlyPermissive,
                   riskScore: rule.riskScore,
                   warnings: t.warnings,
+                  analysisNotes: rule.analysisNotes,
                 });
                 const badge = decided
                   ? REVIEW_STATUS_BADGE[t.reviewStatus] ?? REVIEW_STATUS_BADGE.PENDING
@@ -252,6 +268,7 @@ export default function ReviewPage() {
 
           {selected && (
             <RuleDetail
+              key={selected.id}
               rule={selected}
               src={src}
               tgt={tgt}
@@ -277,11 +294,19 @@ function RuleDetail({
   rule: Rule;
   src: string;
   tgt: string;
-  onReview: (id: string, status: string) => void;
+  onReview: (id: string, status: string, extra?: ReviewExtra) => void;
   saving: boolean;
   error: string;
 }) {
   const t = rule.translatedRule;
+  const canEdit = useCanEdit();
+  const [note, setNote] = useState(t.reviewerNote ?? "");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(t.manualOverride ?? t.targetConfig);
+  const noteChanged = note.trim() !== (t.reviewerNote ?? "");
+  // Send the note only when it changed, so a decision never drops it
+  const decide = (status: string) =>
+    onReview(rule.id, status, noteChanged ? { reviewerNote: note } : {});
   const warnings = t.warnings ?? [];
   const review = warnings.filter((w) => w.startsWith("REVIEW:"));
   const notes = warnings.filter((w) => !w.startsWith("REVIEW:") && !w.startsWith("AI:"));
@@ -290,6 +315,7 @@ function RuleDetail({
     isOverlyPermissive: rule.isOverlyPermissive,
     riskScore: rule.riskScore,
     warnings,
+    analysisNotes: rule.analysisNotes,
   });
   const status = REVIEW_STATUS_BADGE[t.reviewStatus] ?? REVIEW_STATUS_BADGE.PENDING;
   const stateLabel = { risk: "Risky rule", flag: "Needs review", ok: "Clean" }[state];
@@ -333,6 +359,10 @@ function RuleDetail({
         <CodeBlock label={`Source · ${src}`} code={sourceText(rule, src)} />
         <CodeBlock label={`Target · ${tgt}`} code={t.targetConfig} />
       </div>
+
+      {t.reviewStatus === "MODIFIED" && t.manualOverride && !editing && (
+        <CodeBlock label={`Changed by hand · ${tgt} (exported instead)`} code={t.manualOverride} />
+      )}
 
       {(t.explanation || notes.length > 0) && (
         <div className="grid gap-1.5">
@@ -380,32 +410,114 @@ function RuleDetail({
         </div>
       )}
 
-      <div className="flex flex-wrap justify-end gap-2">
-        <button
-          onClick={() => onReview(rule.id, "SKIPPED")}
-          disabled={saving}
-          className="btn btn-ghost btn-sm"
-          aria-pressed={t.reviewStatus === "SKIPPED"}
-        >
-          Skip
-        </button>
-        <button
-          onClick={() => onReview(rule.id, "FLAGGED")}
-          disabled={saving}
-          className="btn btn-danger btn-sm"
-          aria-pressed={t.reviewStatus === "FLAGGED"}
-        >
-          Flag
-        </button>
-        <button
-          onClick={() => onReview(rule.id, "APPROVED")}
-          disabled={saving}
-          className="btn btn-primary btn-sm"
-          aria-pressed={t.reviewStatus === "APPROVED"}
-        >
-          Approve
-        </button>
-      </div>
+      {!canEdit ? (
+        <>
+          {t.reviewerNote && (
+            <p className="text-[13px]">
+              <b className="mr-1">Reviewer note:</b>
+              {t.reviewerNote}
+            </p>
+          )}
+          <ReadOnlyNote action="review rules" />
+        </>
+      ) : editing ? (
+        <div className="grid gap-2">
+          <label htmlFor={`edit-${rule.id}`} className="eyebrow">
+            Changed config for {tgt} (exported and pushed instead of the generated one)
+          </label>
+          <textarea
+            id={`edit-${rule.id}`}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={Math.min(16, Math.max(6, draft.split("\n").length + 1))}
+            className="code"
+            spellCheck={false}
+          />
+          <NoteField id={rule.id} value={note} onChange={setNote} />
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(false);
+                setDraft(t.manualOverride ?? t.targetConfig);
+              }}
+              disabled={saving}
+              className="btn btn-ghost btn-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onReview(rule.id, "MODIFIED", { manualOverride: draft, reviewerNote: note });
+                setEditing(false);
+              }}
+              disabled={saving || !draft.trim() || draft.trim() === t.targetConfig.trim()}
+              title={draft.trim() === t.targetConfig.trim() ? "Change the config first" : undefined}
+              className="btn btn-primary btn-sm"
+            >
+              Save as modified
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <NoteField id={rule.id} value={note} onChange={setNote} />
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              onClick={() => decide("SKIPPED")}
+              disabled={saving}
+              className="btn btn-ghost btn-sm"
+              aria-pressed={t.reviewStatus === "SKIPPED"}
+            >
+              Skip
+            </button>
+            <button
+              onClick={() => decide("FLAGGED")}
+              disabled={saving}
+              className="btn btn-danger btn-sm"
+              aria-pressed={t.reviewStatus === "FLAGGED"}
+            >
+              Flag
+            </button>
+            <button
+              onClick={() => setEditing(true)}
+              disabled={saving}
+              className="btn btn-ghost btn-sm"
+              aria-pressed={t.reviewStatus === "MODIFIED"}
+            >
+              Edit
+            </button>
+            <button
+              onClick={() => decide("APPROVED")}
+              disabled={saving}
+              className="btn btn-primary btn-sm"
+              aria-pressed={t.reviewStatus === "APPROVED"}
+            >
+              Approve
+            </button>
+          </div>
+        </>
+      )}
     </section>
+  );
+}
+
+function NoteField({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="grid gap-1">
+      <label htmlFor={`note-${id}`} className="eyebrow">
+        Reviewer note (optional, saved with the decision)
+      </label>
+      <textarea
+        id={`note-${id}`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={2}
+        maxLength={2000}
+        placeholder="Why this rule is flagged, skipped or changed"
+        className="input"
+      />
+    </div>
   );
 }

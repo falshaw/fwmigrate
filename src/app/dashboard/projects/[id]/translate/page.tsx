@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ProjectHeader, type ProjectSummary } from "@/components/ProjectHeader";
 import { ZoneMappingCard } from "@/components/ZoneMappingCard";
+import { ReadOnlyNote, useCanEdit } from "@/components/RoleContext";
 
 interface ExplainState {
   status: string;
@@ -29,6 +30,7 @@ export default function TranslatePage() {
   const params = useParams();
   const router = useRouter();
   const projectId = params.id as string;
+  const canEdit = useCanEdit();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   // null until the server has said whether an LLM is configured
@@ -151,13 +153,17 @@ export default function TranslatePage() {
         )}
 
         <div>
-          <button
-            onClick={handleTranslate}
-            disabled={loading || llmEnabled === null}
-            className="btn btn-primary"
-          >
-            {loading ? "Translating…" : result ? "Translate again" : "Translate all rules"}
-          </button>
+          {canEdit ? (
+            <button
+              onClick={handleTranslate}
+              disabled={loading || llmEnabled === null}
+              className="btn btn-primary"
+            >
+              {loading ? "Translating…" : result ? "Translate again" : "Translate all rules"}
+            </button>
+          ) : (
+            <ReadOnlyNote action="translate" />
+          )}
         </div>
 
         {result && (
@@ -165,7 +171,7 @@ export default function TranslatePage() {
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
                 ["Translated", String(result.translatedCount)],
-                ["Avg confidence", `${Math.round(result.averageConfidence * 100)}%`],
+                ["Translation confidence (avg)", `${Math.round(result.averageConfidence * 100)}%`],
                 ["Review flags", String(result.rulesWithReviewFlags)],
                 ["Duration", `${result.durationMs} ms`],
               ].map(([label, value]) => (

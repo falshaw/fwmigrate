@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ProjectHeader } from "@/components/ProjectHeader";
+import { useCanEdit } from "@/components/RoleContext";
 
 interface AnalysisResult {
   id: string;
@@ -26,6 +27,7 @@ export default function AnalysisPage() {
   const params = useParams();
   const router = useRouter();
   const projectId = params.id as string;
+  const canEdit = useCanEdit();
   const [results, setResults] = useState<AnalysisResult[]>([]);
   const [ruleCount, setRuleCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -79,9 +81,11 @@ export default function AnalysisPage() {
         subtitle={ruleCount > 0 ? `${ruleCount} rules parsed` : undefined}
         actions={
           <>
-            <button onClick={runAnalysis} disabled={analyzing} className="btn btn-ghost btn-sm">
-              {analyzing ? "Analysing…" : "Run analysis"}
-            </button>
+            {canEdit && (
+              <button onClick={runAnalysis} disabled={analyzing} className="btn btn-ghost btn-sm">
+                {analyzing ? "Analysing…" : "Run analysis"}
+              </button>
+            )}
             <button
               onClick={() => router.push(`/dashboard/projects/${projectId}/translate`)}
               className="btn btn-primary btn-sm"

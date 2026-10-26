@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { useCanEdit } from "@/components/RoleContext";
 import {
   ShieldCheck,
   Send,
@@ -72,6 +73,7 @@ export default function ProjectOverviewPage() {
   const [pushing, setPushing] = useState(false);
   const [pushResult, setPushResult] = useState<ChangeManagerResult | null>(null);
   const [pushError, setPushError] = useState("");
+  const canEdit = useCanEdit();
 
   useEffect(() => {
     fetch(`/api/v1/projects/${params.id}`)
@@ -157,7 +159,9 @@ export default function ProjectOverviewPage() {
     "APPROVED",
     "EXPORTED",
   ].includes(project.status);
-  const pushBlocked = pushBlockReason(project.status, cm);
+  const pushBlocked = canEdit
+    ? pushBlockReason(project.status, cm)
+    : "Your role is read only: a consultant or admin pushes the rules.";
   const badge = projectStatusBadge(project.status);
 
   return (
@@ -195,7 +199,7 @@ export default function ProjectOverviewPage() {
           ["Rules", project.ruleCount],
           ["Objects", project.objectCount],
           [
-            "Confidence",
+            "Parse confidence",
             project.parseConfidence
               ? `${Math.round(project.parseConfidence * 100)}%`
               : "—",
