@@ -7,6 +7,9 @@
  */
 
 import { logger } from "./logger";
+import { configDisablesRule } from "./generators/base";
+
+export { configDisablesRule };
 
 export interface ChangeManagerConnectionConfig {
   apiUrl: string;
@@ -208,16 +211,6 @@ export async function pushRulesToChangeManager(
     changeManagerUrl: config.apiUrl,
     timestamp: new Date().toISOString(),
   };
-}
-
-/**
- * The pushed config disables the rule: FortiOS `set status disable`, PAN-OS
- * `disabled yes`, ASA `inactive`, Junos `deactivate`, Check Point
- * `enabled false`. The migration emits rules disabled when they cannot run
- * safely (undefined address, unresolved service, unapplied ACL).
- */
-export function configDisablesRule(config: string): boolean {
-  return /set status disable\b|\bdisabled yes\b|^access-list .* inactive$|^deactivate |\benabled false\b/m.test(config);
 }
 
 /** The rule is live on the target only if the source had it on and the pushed config keeps it on. */
