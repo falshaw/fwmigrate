@@ -13,6 +13,7 @@ import { notFound, badRequest } from "@/lib/errors";
 import {
   getChangeManagerConfig,
   pushRulesToChangeManager,
+  pushedEnabled,
   type ChangeManagerRulePayload,
 } from "@/lib/change-manager-integration";
 import { vendorLabel } from "@/lib/vendors";
@@ -71,6 +72,8 @@ export const POST = apiHandler<IntegrationInput>(
       const services = Array.isArray(nr.services)
         ? (nr.services as string[])
         : [];
+      const translatedConfig =
+        tr.reviewStatus === "MODIFIED" && tr.manualOverride ? tr.manualOverride : tr.targetConfig;
 
       return {
         name: nr.name,
@@ -83,7 +86,8 @@ export const POST = apiHandler<IntegrationInput>(
         description: body.description
           ? `${body.description} | Migrated from ${vendorLabel(project.sourceVendor)}`
           : `Migrated from ${vendorLabel(project.sourceVendor)} with FW Migrate`,
-        enabled: nr.enabled,
+        // A rule the migration emitted disabled is pushed disabled
+        enabled: pushedEnabled(nr.enabled, translatedConfig),
         status: "pending_review",
         migrationSource: {
           projectId: project.id,
@@ -92,10 +96,7 @@ export const POST = apiHandler<IntegrationInput>(
           targetVendor: project.targetVendor,
           translationConfidence: tr.confidence,
           originalRuleName: nr.name,
-          translatedConfig:
-            tr.reviewStatus === "MODIFIED" && tr.manualOverride
-              ? tr.manualOverride
-              : tr.targetConfig,
+          translatedConfig,
         },
       };
     });

@@ -54,6 +54,22 @@ export const GET = apiHandler(async ({ params, organizationId, req, user }) => {
   const timestamp = new Date().toISOString();
   const ruleCount = project.translatedRules.length;
 
+  // Rules the review left out of the export (skipped, flagged), listed in
+  // every export so none disappears without a trace
+  const leftOut: LeftOutRule[] = (
+    await prisma.translatedRule.findMany({
+      where: { projectId: params.id, reviewStatus: { notIn: ["APPROVED", "MODIFIED"] } },
+      select: { reviewStatus: true, reviewerNote: true, normalizedRule: { select: { position: true, name: true } } },
+      orderBy: { normalizedRule: { position: "asc" } },
+    })
+  ).map((t) => ({
+    position: t.normalizedRule.position,
+    name: t.normalizedRule.name,
+    status: t.reviewStatus,
+    note: t.reviewerNote,
+  }));
+  const report = { project, leftOut, ...splitFindings(project) };
+
   // Regenerate the approved subset with the generator so the export is a
   // complete config: the objects these rules reference, then the rules
   // (manual overrides replace the generated block of their rule).
@@ -79,7 +95,7 @@ export const GET = apiHandler(async ({ params, organizationId, req, user }) => {
   );
 
   if (exportType === "plan") {
-    const plan = generateMigrationPlan(project, timestamp, rollbacks);
+    const plan = generateMigrationPlan(report, timestamp, rollbacks);
     const filename = `${project.name.replace(/[^a-zA-Z0-9_-]/g, "_")}_migration_plan.md`;
 
     logger.info("Migration plan exported", {
@@ -97,7 +113,7 @@ export const GET = apiHandler(async ({ params, organizationId, req, user }) => {
   }
 
   if (exportType === "report") {
-    const report = generateMigrationReport(project, timestamp);
+    const text = generateMigrationReport(report, timestamp);
     const filename = `${project.name.replace(/[^a-zA-Z0-9_-]/g, "_")}_migration_report.txt`;
 
     logger.info("Migration report exported", {
@@ -105,7 +121,7 @@ export const GET = apiHandler(async ({ params, organizationId, req, user }) => {
       rulesExported: ruleCount,
     });
 
-    return new NextResponse(report, {
+    return new NextResponse(text, {
       status: 200,
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
@@ -122,6 +138,12 @@ export const GET = apiHandler(async ({ params, organizationId, req, user }) => {
     `${c} FW Migrate export -- ${project.name}`,
     `${c} Source: ${vendorLabel(project.sourceVendor)} -> Target: ${vendorLabel(project.targetVendor)}`,
     `${c} Rules exported (approved or modified): ${ruleCount}`,
+    ...(leftOut.length
+      ? [
+          `${c} Left out by the review: ${leftOut.length}`,
+          ...leftOut.map((r) => `${c}   ${leftOutLine(r)}`),
+        ]
+      : []),
     `${c} Generated: ${timestamp}`,
     `${c} Review every line before applying it to a device.`,
     `${c} =============================================================================`,
@@ -152,6 +174,35 @@ export const GET = apiHandler(async ({ params, organizationId, req, user }) => {
   });
 });
 
+interface LeftOutRule {
+  position: number;
+  name: string;
+  status: string;
+  note: string | null;
+}
+
+function leftOutLine(r: LeftOutRule): string {
+  return `#${r.position} ${r.name} (${r.status.toLowerCase()}${r.note ? `: ${r.note.replace(/\s+/g, " ")}` : ""})`;
+}
+
+type Finding = ProjectWithRules["analysisResults"][number];
+
+/** Findings on exported rules, and findings on rules the export leaves out. */
+function splitFindings(project: ProjectWithRules): { onExported: Finding[]; onLeftOut: Finding[] } {
+  const exported = new Set(project.translatedRules.map((t) => String(t.normalizedRule?.position)));
+  const onExported: Finding[] = [];
+  const onLeftOut: Finding[] = [];
+  for (const f of project.analysisResults) (f.ruleId && !exported.has(f.ruleId) ? onLeftOut : onExported).push(f);
+  return { onExported, onLeftOut };
+}
+
+interface ExportData {
+  project: ProjectWithRules;
+  leftOut: LeftOutRule[];
+  onExported: Finding[];
+  onLeftOut: Finding[];
+}
+
 interface ProjectWithRules {
   name: string;
   sourceVendor: string;
@@ -174,6 +225,8 @@ interface ProjectWithRules {
   analysisResults: Array<{
     category: string;
     severity: string;
+    /** position of the rule the finding is about */
+    ruleId: string | null;
     title: string;
     description: string;
     recommendation: string | null;
@@ -181,12 +234,11 @@ interface ProjectWithRules {
 }
 
 function generateMigrationPlan(
-  project: ProjectWithRules,
+  { project, leftOut, onExported: issues, onLeftOut }: ExportData,
   timestamp: string,
   rollbacks: Map<number, string>,
 ): string {
   const rules = project.translatedRules;
-  const issues = project.analysisResults;
   const modified = rules.filter((r) => r.reviewStatus === "MODIFIED");
   const avgConfidence =
     rules.length > 0
@@ -207,9 +259,10 @@ function generateMigrationPlan(
   sections.push(`| Source Vendor | ${vendorLabel(project.sourceVendor)} |`);
   sections.push(`| Target Vendor | ${vendorLabel(project.targetVendor)} |`);
   sections.push(`| Rules Migrated | ${rules.length} |`);
+  sections.push(`| Left Out by Review | ${leftOut.length} |`);
   sections.push(`| Manually Modified | ${modified.length} |`);
   sections.push(`| Avg. Confidence | ${avgConfidence}% |`);
-  sections.push(`| Analysis Issues | ${issues.length} |`);
+  sections.push(`| Analysis Issues (migrated rules) | ${issues.length} |`);
   sections.push(`| Generated | ${timestamp} |`);
   if (project.description) {
     sections.push(`| Description | ${project.description} |`);
@@ -263,7 +316,18 @@ function generateMigrationPlan(
   } else {
     sections.push(`## Analysis Findings`);
     sections.push(``);
-    sections.push(`No issues detected. All rules passed analysis checks.`);
+    sections.push(`No findings on the migrated rules.`);
+    sections.push(``);
+  }
+
+  if (leftOut.length > 0) {
+    sections.push(`## Rules Left Out (${leftOut.length})`);
+    sections.push(``);
+    sections.push(`Not in this plan or the exported config. Decide what happens to each before the cutover.`);
+    sections.push(``);
+    for (const r of leftOut) sections.push(`- ${leftOutLine(r)}`);
+    if (onLeftOut.length)
+      sections.push(``, `${onLeftOut.length} analysis finding(s) concern these rules and are not counted above.`);
     sections.push(``);
   }
 
@@ -275,7 +339,7 @@ function generateMigrationPlan(
   );
   sections.push(``);
 
-  for (const translated of rules) {
+  rules.forEach((translated, step) => {
     const rule = translated.normalizedRule;
     const pos = rule?.position ?? 0;
     const name = rule?.name ?? "unnamed";
@@ -283,7 +347,7 @@ function generateMigrationPlan(
     const wasModified = translated.reviewStatus === "MODIFIED";
 
     sections.push(
-      `### Step ${pos}: ${name}${wasModified ? " (MANUALLY MODIFIED)" : ""}`,
+      `### Step ${step + 1}: ${name} (source rule #${pos})${wasModified ? " (MANUALLY MODIFIED)" : ""}`,
     );
     sections.push(``);
     sections.push(`| Property | Value |`);
@@ -314,7 +378,7 @@ function generateMigrationPlan(
     sections.push(`- [ ] Applied`);
     sections.push(`- [ ] Verified (traffic flowing correctly)`);
     sections.push(``);
-  }
+  });
 
   // Post-migration verification
   sections.push(`## Post-Migration Verification`);
@@ -364,12 +428,11 @@ function generateMigrationPlan(
     `Execute in **reverse order** (bottom-up) to safely remove migrated rules:`,
   );
   sections.push(``);
-  const reversedRules = [...rules].reverse();
-  for (const translated of reversedRules) {
-    const rule = translated.normalizedRule;
+  for (let step = rules.length; step >= 1; step--) {
+    const rule = rules[step - 1].normalizedRule;
     const pos = rule?.position ?? 0;
     const name = rule?.name ?? "unnamed";
-    sections.push(`**Rule ${pos}: ${name}**`);
+    sections.push(`**Step ${step}: ${name} (source rule #${pos})**`);
     sections.push("```");
     sections.push(rollbacks.get(pos) ?? `# Remove rule "${name}" manually`);
     sections.push("```");
@@ -401,11 +464,10 @@ function generateMigrationPlan(
  * FM-03: Generate migration summary report with stats, risk assessment, and findings.
  */
 function generateMigrationReport(
-  project: ProjectWithRules,
+  { project, leftOut, onExported: issues, onLeftOut }: ExportData,
   timestamp: string,
 ): string {
   const rules = project.translatedRules;
-  const issues = project.analysisResults;
 
   const approved = rules.filter((r) => r.reviewStatus === "APPROVED").length;
   const modified = rules.filter((r) => r.reviewStatus === "MODIFIED").length;
@@ -449,6 +511,7 @@ function generateMigrationReport(
 
   // Risk level from the worst evidence, not an average: one permit any/any/any
   // or one rule that never matches is enough to make a migration risky.
+  // Only findings on exported rules count; left-out rules are listed apart.
   const riskReasons: string[] = [];
   if (criticalIssues.length)
     riskReasons.push(`${criticalIssues.length} critical analysis finding(s): ${criticalIssues.map((i) => i.title).join("; ")}`);
@@ -479,13 +542,14 @@ function generateMigrationReport(
   s.push("EXECUTIVE SUMMARY");
   s.push("-".repeat(60));
   s.push(`  Rules exported:          ${rules.length}`);
+  s.push(`  Left out by the review:  ${leftOut.length}`);
   s.push(`  Approved as translated:  ${approved}`);
   s.push(`  Changed by hand:         ${modified}`);
   s.push(
     `  Average Confidence:      ${(parseFloat(avgConfidence) * 100).toFixed(0)}%`,
   );
   s.push(`  Migration risk:          ${riskLevel}`);
-  s.push(`  Analysis Findings:       ${issues.length}`);
+  s.push(`  Analysis findings:       ${issues.length} on exported rules, ${onLeftOut.length} on rules left out`);
   s.push("");
 
   s.push("CONFIDENCE DISTRIBUTION");
@@ -533,6 +597,18 @@ function generateMigrationReport(
     }
   }
 
+  if (leftOut.length > 0) {
+    s.push("RULES LEFT OUT OF THE EXPORT");
+    s.push("-".repeat(60));
+    for (const r of leftOut) s.push(`  ${leftOutLine(r)}`);
+    if (onLeftOut.length) {
+      s.push("");
+      s.push("  Findings on these rules (not counted in the risk):");
+      for (const issue of onLeftOut) s.push(`    [${issue.severity.toUpperCase()}] ${issue.title}`);
+    }
+    s.push("");
+  }
+
   if (lowConf > 0) {
     s.push("LOW-CONFIDENCE RULES (REQUIRE REVIEW)");
     s.push("-".repeat(60));
@@ -550,6 +626,7 @@ function generateMigrationReport(
   s.push("-".repeat(60));
   s.push(`  Risk level: ${riskLevel}`);
   s.push("  HIGH = any critical finding or low-confidence rule; MEDIUM = high or medium findings.");
+  s.push("  Counted on the exported rules only.");
   s.push("");
   s.push("  Because of:");
   if (riskReasons.length) for (const r of riskReasons) s.push(`    - ${r}`);

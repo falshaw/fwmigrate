@@ -211,6 +211,21 @@ export async function pushRulesToChangeManager(
 }
 
 /**
+ * The pushed config disables the rule: FortiOS `set status disable`, PAN-OS
+ * `disabled yes`, ASA `inactive`, Junos `deactivate`, Check Point
+ * `enabled false`. The migration emits rules disabled when they cannot run
+ * safely (undefined address, unresolved service, unapplied ACL).
+ */
+export function configDisablesRule(config: string): boolean {
+  return /set status disable\b|\bdisabled yes\b|^access-list .* inactive$|^deactivate |\benabled false\b/m.test(config);
+}
+
+/** The rule is live on the target only if the source had it on and the pushed config keeps it on. */
+export function pushedEnabled(sourceEnabled: boolean, pushedConfig: string): boolean {
+  return sourceEnabled && !configDisablesRule(pushedConfig);
+}
+
+/**
  * Build Change Manager-compatible rule payloads from translated rules.
  */
 export function buildChangeManagerRules(
@@ -247,6 +262,8 @@ export function buildChangeManagerRules(
     const services = Array.isArray(nr.services)
       ? (nr.services as string[])
       : [];
+    const translatedConfig =
+      tr.reviewStatus === "MODIFIED" && tr.manualOverride ? tr.manualOverride : tr.targetConfig;
 
     return {
       name: nr.name,
@@ -259,7 +276,7 @@ export function buildChangeManagerRules(
       description: description
         ? `${description} | Migrated from ${project.sourceVendor}`
         : `Migrated from ${project.sourceVendor} via FW Migrate`,
-      enabled: nr.enabled,
+      enabled: pushedEnabled(nr.enabled, translatedConfig),
       status: "pending_review",
       migrationSource: {
         projectId: project.id,
@@ -268,10 +285,7 @@ export function buildChangeManagerRules(
         targetVendor: project.targetVendor,
         translationConfidence: tr.confidence,
         originalRuleName: nr.name,
-        translatedConfig:
-          tr.reviewStatus === "MODIFIED" && tr.manualOverride
-            ? tr.manualOverride
-            : tr.targetConfig,
+        translatedConfig,
       },
     };
   });
