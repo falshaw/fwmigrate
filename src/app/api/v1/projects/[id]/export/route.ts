@@ -484,6 +484,9 @@ function generateMigrationReport(
     (r) => r.confidence >= 0.7 && r.confidence < 0.9,
   ).length;
   const lowConf = rules.filter((r) => r.confidence < 0.7).length;
+  // A rule changed by hand no longer ships the generated config, so its
+  // generated confidence says nothing about the export; it counts as "changed by hand"
+  const lowAsTranslated = rules.filter((r) => r.confidence < 0.7 && r.reviewStatus !== "MODIFIED");
 
   // Issue severity breakdown
   const criticalIssues = issues.filter(
@@ -515,13 +518,13 @@ function generateMigrationReport(
   const riskReasons: string[] = [];
   if (criticalIssues.length)
     riskReasons.push(`${criticalIssues.length} critical analysis finding(s): ${criticalIssues.map((i) => i.title).join("; ")}`);
-  if (lowConf)
-    riskReasons.push(`${lowConf} exported rule(s) with low translation confidence (<70%)`);
+  if (lowAsTranslated.length)
+    riskReasons.push(`${lowAsTranslated.length} rule(s) approved as translated with low confidence (<70%)`);
   if (highIssues.length) riskReasons.push(`${highIssues.length} high-severity finding(s)`);
   if (mediumIssues.length) riskReasons.push(`${mediumIssues.length} medium-severity finding(s)`);
   if (modified) riskReasons.push(`${modified} rule(s) changed by hand after translation`);
   const riskLevel =
-    criticalIssues.length || lowConf
+    criticalIssues.length || lowAsTranslated.length
       ? "HIGH"
       : highIssues.length || mediumIssues.length || modified
         ? "MEDIUM"
@@ -609,10 +612,10 @@ function generateMigrationReport(
     s.push("");
   }
 
-  if (lowConf > 0) {
+  if (lowAsTranslated.length > 0) {
     s.push("LOW-CONFIDENCE RULES (REQUIRE REVIEW)");
     s.push("-".repeat(60));
-    for (const r of rules.filter((r) => r.confidence < 0.7)) {
+    for (const r of lowAsTranslated) {
       const name = r.normalizedRule?.name ?? "unnamed";
       const pos = r.normalizedRule?.position ?? 0;
       s.push(
@@ -625,7 +628,8 @@ function generateMigrationReport(
   s.push("RISK ASSESSMENT");
   s.push("-".repeat(60));
   s.push(`  Risk level: ${riskLevel}`);
-  s.push("  HIGH = any critical finding or low-confidence rule; MEDIUM = high or medium findings.");
+  s.push("  HIGH = any critical finding or a low-confidence rule approved as translated;");
+  s.push("  MEDIUM = high or medium findings, or rules changed by hand.");
   s.push("  Counted on the exported rules only.");
   s.push("");
   s.push("  Because of:");
