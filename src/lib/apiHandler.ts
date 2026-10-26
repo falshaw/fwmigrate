@@ -9,6 +9,7 @@ import type { Role } from "@/generated/prisma";
 import { getSession } from "./session";
 import { applyRateLimit, RATE_LIMITS, type RateLimitConfig } from "./rateLimit";
 import { logger } from "./logger";
+import prisma from "./prisma";
 
 /** Roles that may change data. VIEWER reads only. */
 export const WRITE_ROLES: Role[] = ["ADMIN", "CONSULTANT"];
@@ -81,6 +82,17 @@ export function apiHandler<T = unknown>(
           return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         user = session.user as UserContext;
+
+        // The session token is valid for 24 h; role and active flag come from
+        // the database so an admin's change applies on the next request.
+        const current = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { role: true, isActive: true },
+        });
+        if (!current?.isActive) {
+          return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        user = { ...user, role: current.role };
 
         const allowed = roles ?? (req.method === "GET" || req.method === "HEAD" ? undefined : WRITE_ROLES);
         if (allowed && !allowed.includes(user.role)) {

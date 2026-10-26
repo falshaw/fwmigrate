@@ -39,18 +39,14 @@ export interface OverviewData {
   projects: OverviewProject[];
   /** needsReview = pending + flagged: every rule waiting for a human. */
   totals: { rules: number; needsReview: number; risky: number };
-  /** Rule reviews per day, oldest first, last 7 days including today. */
-  activity: { date: string; count: number }[];
+  /** Review timestamps of the last 8 days; the page counts them per local day. */
+  reviewTimes: string[];
   queue: QueueItem[];
   pairs: { source: string; target: string; projects: number }[];
 }
 
 const QUEUE_SIZE = 6;
 const QUEUE_SCAN = 500;
-
-function dayKey(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
 
 function asStrings(v: unknown): string[] {
   return Array.isArray(v) ? v.map(String) : [];
@@ -108,10 +104,8 @@ export async function loadProjects(organizationId: string): Promise<OverviewProj
 export async function loadOverview(organizationId: string): Promise<OverviewData> {
   const inOrg = { project: { organizationId } };
 
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  const since = new Date(today);
-  since.setUTCDate(since.getUTCDate() - 6);
+  // 8 days back covers the last 7 local days in any time zone
+  const since = new Date(Date.now() - 8 * 86_400_000);
 
   const [overviewProjects, risky, reviewed, open] = await Promise.all([
     loadProjects(organizationId),
@@ -153,18 +147,7 @@ export async function loadOverview(organizationId: string): Promise<OverviewData
     }),
   ]);
 
-  const perDay = new Map<string, number>();
-  for (const r of reviewed) {
-    if (!r.reviewedAt) continue;
-    const k = dayKey(r.reviewedAt);
-    perDay.set(k, (perDay.get(k) ?? 0) + 1);
-  }
-  const activity = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(since);
-    d.setUTCDate(since.getUTCDate() + i);
-    const k = dayKey(d);
-    return { date: k, count: perDay.get(k) ?? 0 };
-  });
+  const reviewTimes = reviewed.flatMap((r) => (r.reviewedAt ? [r.reviewedAt.toISOString()] : []));
 
   // Review queue: rules a human flagged, then risky rules, then rules the
   // translator marked for review. Clean pending rules are not listed.
@@ -219,7 +202,7 @@ export async function loadOverview(organizationId: string): Promise<OverviewData
       needsReview: overviewProjects.reduce((s, p) => s + p.pending + p.flagged, 0),
       risky,
     },
-    activity,
+    reviewTimes,
     queue,
     pairs: [...pairMap.values()].sort((a, b) => b.projects - a.projects),
   };

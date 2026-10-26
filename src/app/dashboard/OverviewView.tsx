@@ -13,6 +13,8 @@ import {
 import type { OverviewData, OverviewProject, QueueItem } from "@/lib/dashboard";
 import { vendorShort } from "@/lib/vendors";
 import { ProjectsTable } from "@/components/ProjectsTable";
+import { useInBrowser } from "@/components/LocalTime";
+import { reviewsPerDay } from "@/lib/ui/activity";
 
 const nf = new Intl.NumberFormat("en-GB");
 
@@ -29,7 +31,15 @@ function matches(p: OverviewProject, q: string) {
   return hay.toLowerCase().includes(q);
 }
 
-export function OverviewView({ data, today }: { data: OverviewData; today: string }) {
+export function OverviewView({ data }: { data: OverviewData }) {
+  // The viewer's date; the server render shows the UTC date until hydration
+  const inBrowser = useInBrowser();
+  const today = new Date().toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    ...(!inBrowser && { timeZone: "UTC" }),
+  });
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
 
@@ -74,7 +84,7 @@ export function OverviewView({ data, today }: { data: OverviewData; today: strin
       </div>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,.75fr)_minmax(0,1.1fr)]">
-        <ActivityTile activity={data.activity} />
+        <ActivityTile reviewTimes={data.reviewTimes} />
 
         <div className="grid gap-3">
           <StatTile
@@ -229,7 +239,10 @@ function StatTile({
   );
 }
 
-function ActivityTile({ activity }: { activity: OverviewData["activity"] }) {
+function ActivityTile({ reviewTimes }: { reviewTimes: string[] }) {
+  const inBrowser = useInBrowser();
+  const tz = inBrowser ? undefined : "UTC";
+  const activity = reviewsPerDay(reviewTimes, new Date(), tz);
   const max = Math.max(1, ...activity.map((d) => d.count));
   const total = activity.reduce((s, d) => s + d.count, 0);
   return (
@@ -242,7 +255,8 @@ function ActivityTile({ activity }: { activity: OverviewData["activity"] }) {
         {activity.map((d, i) => {
           const h = (d.count / max) * 100;
           const isToday = i === activity.length - 1;
-          const day = new Date(`${d.date}T00:00:00Z`).toLocaleDateString("en-GB", {
+          // d.date is already the viewer's day; noon UTC names that same day
+          const day = new Date(`${d.date}T12:00:00Z`).toLocaleDateString("en-GB", {
             weekday: "short",
             timeZone: "UTC",
           });

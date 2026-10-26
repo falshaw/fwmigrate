@@ -11,6 +11,14 @@ import { NextRequest, NextResponse } from "next/server";
 
 const session = vi.hoisted(() => ({ current: null as null | { user: Record<string, string> } }));
 vi.mock("@/lib/session", () => ({ getSession: async () => session.current }));
+vi.mock("@/lib/prisma", () => ({
+  default: {
+    user: {
+      findUnique: async () =>
+        session.current ? { role: session.current.user.role, isActive: session.current.user.active !== "no" } : null,
+    },
+  },
+}));
 
 import { apiHandler } from "../../src/lib/apiHandler";
 import { RATE_LIMITS } from "../../src/lib/rateLimit";

@@ -19,6 +19,7 @@ import { PageHeader } from "@/components/ProjectHeader";
 import { detectVendor } from "@/lib/ui/detect-vendor";
 import { CONFIG_FILE_ACCEPT } from "@/lib/ui/config-file";
 import { useCanEdit } from "@/components/RoleContext";
+import { LocalTime } from "@/components/LocalTime";
 
 interface BatchConfig {
   filename: string;
@@ -609,7 +610,7 @@ export default function BatchMigrationPage() {
                       </span>
                     )}
                     <span className="text-xs text-ink-45">
-                      {new Date(batch.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                      <LocalTime iso={batch.createdAt} />
                     </span>
                   </div>
                 </div>

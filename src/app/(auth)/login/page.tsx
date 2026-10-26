@@ -54,7 +54,11 @@ export default function LoginPage() {
     });
 
     if (result?.error) {
-      setError("Invalid email or password");
+      setError(
+        result.code === "locked"
+          ? "Too many failed sign-ins: this account is locked for 15 minutes. An admin can unlock it under Users."
+          : "Invalid email or password",
+      );
       setLoading(false);
     } else {
       router.push(safeCallbackPath(new URLSearchParams(window.location.search).get("callbackUrl")));

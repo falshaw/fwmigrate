@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { projectStatusBadge } from "@/lib/ui/rules";
+import { LocalTime } from "./LocalTime";
 
 interface Version {
   id: string;
@@ -17,15 +18,6 @@ interface Version {
     note?: string;
   } | null;
   changedBy: { name: string | null; email: string } | null;
-}
-
-function when(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 /** Every status change of the project: when, by whom, and the counts at the time. */
@@ -67,7 +59,9 @@ export function ProjectHistory({ projectId, refreshKey }: { projectId: string; r
                 key={v.id}
                 className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-g-line bg-g-bg px-3 py-2 text-[13px]"
               >
-                <span className="w-[92px] shrink-0 font-mono text-xs text-ink-65">{when(v.createdAt)}</span>
+                <span className="w-[132px] shrink-0 font-mono text-xs text-ink-65">
+                  <LocalTime iso={v.createdAt} />
+                </span>
                 <span className={`badge ${to.cls}`}>{to.label}</span>
                 <span className="min-w-0 flex-1 text-xs text-ink-65">
                   {s.note ?? counts}
