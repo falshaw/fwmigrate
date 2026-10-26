@@ -118,7 +118,13 @@ export const POST = apiHandler<ImportConfigInput>(
         }),
       ]);
       logger.info("Config replaced", { projectId: params.id });
-      await recordStatusChange(params.id, "CREATED", user.id, "Config replaced: parse, analysis, translation and review discarded");
+      await recordStatusChange(
+        params.id,
+        "CREATED",
+        user.id,
+        "Parse, analysis, translation and review discarded",
+        "Config replaced",
+      );
     }
 
     const configType = body.configType || detectConfigType(body.rawConfig);

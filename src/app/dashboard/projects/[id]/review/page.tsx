@@ -90,6 +90,23 @@ export default function ReviewPage() {
   const [saveError, setSaveError] = useState("");
 
   const [attempt, setAttempt] = useState(0);
+  const [llmEnabled, setLlmEnabled] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/v1/projects/${projectId}/translate`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setLlmEnabled(!!d?.llm?.enabled))
+      .catch(() => setLlmEnabled(false));
+  }, [projectId]);
+
+  /** Store a fresh AI explanation on the rule shown in the list. */
+  function onExplained(normalizedRuleId: string, ai: { aiExplanation: string; aiModel: string; warnings: string[] }) {
+    setRules((prev) =>
+      prev.map((r) =>
+        r.id === normalizedRuleId ? { ...r, translatedRule: { ...r.translatedRule!, ...ai } } : r,
+      ),
+    );
+  }
 
   useEffect(() => {
     fetchAllRules<NormalizedRuleWithTranslation>(projectId)
@@ -275,6 +292,8 @@ export default function ReviewPage() {
               onReview={reviewRule}
               saving={saving}
               error={saveError}
+              llmEnabled={llmEnabled}
+              onExplained={onExplained}
             />
           )}
         </div>
@@ -290,6 +309,8 @@ function RuleDetail({
   onReview,
   saving,
   error,
+  llmEnabled,
+  onExplained,
 }: {
   rule: Rule;
   src: string;
@@ -297,12 +318,33 @@ function RuleDetail({
   onReview: (id: string, status: string, extra?: ReviewExtra) => void;
   saving: boolean;
   error: string;
+  llmEnabled: boolean;
+  onExplained: (id: string, ai: { aiExplanation: string; aiModel: string; warnings: string[] }) => void;
 }) {
   const t = rule.translatedRule;
   const canEdit = useCanEdit();
   const [note, setNote] = useState(t.reviewerNote ?? "");
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(t.manualOverride ?? t.targetConfig);
+  const [explaining, setExplaining] = useState(false);
+  const [explainError, setExplainError] = useState("");
+
+  async function explainWithAi() {
+    setExplaining(true);
+    setExplainError("");
+    const res = await fetch("/api/v1/ai/explain", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ruleId: rule.id }),
+    }).catch(() => null);
+    setExplaining(false);
+    const data = res ? await res.json().catch(() => ({})) : {};
+    if (!res?.ok) {
+      setExplainError(data.error || data.detail || "The AI explanation failed.");
+      return;
+    }
+    onExplained(rule.id, data);
+  }
   const noteChanged = note.trim() !== (t.reviewerNote ?? "");
   // Send the note only when it changed, so a decision never drops it
   const decide = (status: string) =>
@@ -402,6 +444,28 @@ function RuleDetail({
             </ul>
           )}
         </aside>
+      )}
+
+      {llmEnabled && canEdit && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={explainWithAi}
+            disabled={explaining}
+            className="btn btn-ghost btn-sm"
+            aria-describedby={`ai-note-${rule.id}`}
+          >
+            {explaining ? "Asking the LLM…" : t.aiExplanation ? "Explain again with AI" : "Explain with AI"}
+          </button>
+          <span id={`ai-note-${rule.id}`} className="text-[11px] text-ink-45">
+            Optional; the answer is labelled AI and never changes the config.
+          </span>
+          {explainError && (
+            <span className="text-xs text-red" role="alert">
+              {explainError}
+            </span>
+          )}
+        </div>
       )}
 
       {error && (

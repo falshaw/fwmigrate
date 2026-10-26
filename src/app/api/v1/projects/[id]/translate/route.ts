@@ -245,7 +245,8 @@ export const POST = apiHandler(
 
 /**
  * GET /api/v1/projects/[id]/translate
- * Progress of the optional LLM explanation job.
+ * The stored translation (counts, average confidence, review flags) and the
+ * progress of the optional LLM explanation job.
  */
 export const GET = apiHandler(async ({ params, organizationId }) => {
   const project = await prisma.migrationProject.findUnique({
@@ -253,8 +254,24 @@ export const GET = apiHandler(async ({ params, organizationId }) => {
     select: { organizationId: true, status: true },
   });
   if (!project || project.organizationId !== organizationId) return notFound("Project not found");
+  const stored = await prisma.translatedRule.findMany({
+    where: { projectId: params.id },
+    select: { confidence: true, warnings: true, reviewStatus: true },
+  });
+  const translation = stored.length
+    ? {
+        translatedCount: stored.length,
+        averageConfidence:
+          Math.round((stored.reduce((s, r) => s + r.confidence, 0) / stored.length) * 100) / 100,
+        rulesWithReviewFlags: stored.filter(
+          (r) => Array.isArray(r.warnings) && r.warnings.some((w) => String(w).startsWith("REVIEW:")),
+        ).length,
+        reviewed: stored.filter((r) => r.reviewStatus !== "PENDING").length,
+      }
+    : null;
   return NextResponse.json({
     projectStatus: project.status,
+    translation,
     llm: { enabled: isLlmEnabled(), provider: llmProvider() },
     explain: getExplainJob(params.id) ?? { status: isLlmEnabled() ? "idle" : "disabled" },
   });

@@ -16,6 +16,8 @@ interface Version {
     translatedCount?: number;
     approvedCount?: number;
     note?: string;
+    /** What happened, when the status alone would mislead */
+    event?: string;
   } | null;
   changedBy: { name: string | null; email: string } | null;
 }
@@ -45,8 +47,8 @@ export function ProjectHistory({ projectId, refreshKey }: { projectId: string; r
       ) : (
         <ol className="grid gap-2">
           {versions.map((v) => {
-            const to = projectStatusBadge(v.toStatus);
             const s = v.snapshot ?? {};
+            const to = s.event ? { cls: "b-amber", label: s.event } : projectStatusBadge(v.toStatus);
             const counts = [
               s.ruleCount ? `${s.ruleCount} rules` : "",
               s.translatedCount ? `${s.translatedCount} translated` : "",

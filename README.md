@@ -20,8 +20,8 @@ Import config -> Parse -> Analyse -> Translate -> Review -> Export
 2. **Parse** it with the vendor's parser into rules, address/service objects and groups, and NAT rules.
 3. **Analyse** the rule base (see [Rule analysis](#rule-analysis)).
 4. **Translate** each rule with the target vendor's generator. Every rule gets a confidence score and review flags. On the same page, **zone mapping** sets the target interface or zone for every zone the rules use (default: the source name).
-5. **Review** rule by rule: approve, skip or flag. The project moves to *Reviewing*, and to *Approved* once every rule has a decision.
-6. **Export** the target configuration (objects + rules), a migration plan (checklists, per-rule rollback commands) or a summary report.
+5. **Review** rule by rule: approve, skip, flag, or edit the generated config (saved as *modified* and exported instead). A reviewer note can go with any decision. The project moves to *Reviewing*, and to *Approved* once every rule has a decision.
+6. **Export** the target configuration (objects + rules), a migration plan (checklists, per-rule rollback commands) or a summary report. Each lists the rules the review left out, with their status and note; the report's risk counts only the findings on exported rules.
 
 Re-running a step never moves a project backwards unless something changed: a re-analysis keeps an *Exported* project *Exported*, and a re-translation keeps the review of every rule whose generated config is unchanged. Only rules whose output changed go back to pending.
 
@@ -46,11 +46,12 @@ Parsers keep each vendor's own tokens on the rule (`application-default`, `any`,
 - **Services** are first resolved to protocol/port specs (`src/lib/generators/services.ts`), then each target uses its own predefined service (FortiOS `HTTPS`/`DNS`/`PING`, Junos `junos-https`, Check Point `https`/`domain-udp`, PAN-OS `service-https`) or emits a custom service object.
 - **PAN-OS App-ID with `application-default`** is resolved from the rule's applications to their standard ports: `ssl` -> 443, `web-browsing` -> 80, `dns` -> 53, `ssh`, `telnet`, `ftp`, `smtp`, `pop3`, `imap`, `ntp`, `snmp`, `syslog`, `ldap`, `ms-rdp`, `tftp`, `mssql-db`, `mysql`, `ms-ds-smb`, `kerberos`, `bgp`, `ping`, `icmp`. The App-IDs stay visible in the target rule's comment/description (and are kept as App-ID when the target is PAN-OS). Layer-7 enforcement is not carried over and the rule says so.
 - **Anything that cannot be mapped** (an unknown App-ID, a service name not defined in the source) lowers the rule's confidence and adds a `REVIEW:` flag. A rule with no resolvable service is emitted **disabled**, never as a live rule with a guessed service.
+- **Unapplied ASA access lists**: an ACL that no `access-group` binds filters no transit traffic on the ASA (it is unused, or matches traffic for VPN, NAT or QoS). Its rules are emitted **disabled** with a `REVIEW:` flag and confidence 30 %, an ASA target leaves the ACL unbound, and the analysis reports each rule. `access-group ... out interface` gives the ACL's egress zone.
 - **Undefined addresses**: a name the source rule uses but the source config never defines gets a placeholder object (`255.255.255.255/32`, which matches no unicast traffic) so the target accepts the config, and the rule is emitted **disabled** with a `REVIEW:` note. Set the real address before enabling it.
 - **Same-platform names**: Junos `junos-*` applications are predefined on the SRX, so an SRX -> SRX migration keeps them as they are; to any other target they are unresolved.
 - **Objects**: every address, group and service a rule references is emitted before the rules, including objects created for literal IPs, ranges and FQDNs used directly in rules (SRX and FortiOS policies cannot reference literals).
 - **FortiOS policy IDs**: policies are written as `edit 0`, so the FortiGate assigns the next free IDs and never overwrites an existing policy. The rollback commands look a policy up by its name.
-- **Zones**: zone mappings from the project are applied. ASA rules go into `<nameif>_access_in` ACLs bound with `access-group` (source zone `any` -> global ACL, flagged); SRX rules with an `any` zone become global policies; Check Point rules carry a flag that zones need security-zone objects.
+- **Zones**: zone mappings from the project are applied. ASA rules go into `<nameif>_access_in` ACLs bound with `access-group` (source zone `any` -> global ACL, flagged); SRX rules with an `any` zone become global policies, and because Junos evaluates global policies after every zone policy, a global policy that sat above a zone-specific rule in the source is flagged with lower confidence; Check Point rules carry a flag that zones need security-zone objects.
 - **Any vs all**: `any` becomes `all`/`ALL` on FortiOS, `Any` on Check Point, `ip` on ASA, `any` on PAN-OS and Junos.
 
 `tests/generators/cross-vendor.test.ts` runs every source fixture through every generator and checks that each referenced object is defined or predefined and that no other vendor's keywords appear in the output.
@@ -114,7 +115,7 @@ npx prisma db push
 npx prisma db seed
 ```
 
-The seed prints the login: `admin@demo.local` and a random password (or `SEED_ADMIN_PASSWORD` if set). Open http://localhost:3004 (or your `APP_PORT`). There is no self-registration; further users are created in the database.
+The seed prints the login: `admin@demo.local` and a random password (or `SEED_ADMIN_PASSWORD` if set). Open http://localhost:3004 (or your `APP_PORT`). There is no self-registration; an admin adds users under **Users**.
 
 To try it: **New migration** (for example Palo Alto -> Fortinet), drop `tests/fixtures/paloalto-legacy-ruleset.xml` on the import page, then run analysis, translate and review. The other fixtures in `tests/fixtures/` cover every source vendor.
 
@@ -134,7 +135,7 @@ Set `LLM_PROVIDER` in `.env` and recreate the app container (`docker compose up 
 
 Translation returns immediately either way. With an LLM configured, per-rule explanations run afterwards as a background job, bounded by `LLM_TIMEOUT_MS` per call, `LLM_CONCURRENCY` parallel calls and `LLM_EXPLAIN_MAX_RULES` rules per run; the translate page shows progress. LLM calls sit behind a circuit breaker.
 
-AI text is stored apart from the generator's deterministic notes. On the review page it sits in its own panel with an **AI** badge and the provider and model name (for example `ollama · gemma4:31b`); the deterministic notes are tagged *deterministic*. A rule keeps its AI explanation when a re-translation leaves its config unchanged.
+AI text is stored apart from the generator's deterministic notes. On the review page it sits in its own panel with an **AI** badge and the provider and model name (for example `ollama · gemma4:31b`); the deterministic notes are tagged *deterministic*. A rule keeps its AI explanation when a re-translation leaves its config unchanged. **Explain with AI** on the review page asks for one rule's explanation on demand.
 
 ![Review with an AI explanation, light theme](docs/review-light.png)
 
@@ -152,7 +153,7 @@ AI text is stored apart from the generator's deterministic notes. On the review 
 - Delete a project (admins) with everything that belongs to it
 - Optional push of approved rules to an external change-management system over HTTP; the push button stays disabled, with the reason, while that system is not configured or not reachable
 - Multi-tenant: users belong to an organisation; all data is organisation-scoped
-- Roles: `ADMIN`, `CONSULTANT`, `VIEWER`
+- Roles, enforced in the API and reflected in the UI: `VIEWER` reads, validates and downloads exports; `CONSULTANT` also imports, analyses, translates, reviews, exports and pushes; `ADMIN` also deletes projects and manages users (create, role, deactivate, new password, unlock a locked account). Role changes apply on the next request.
 - Light and dark theme, usable from 390 px wide
 
 ![Projects on a phone, dark theme](docs/projects-mobile-dark.png)
@@ -167,7 +168,7 @@ Browser ──> Next.js app (UI + /api routes, NextAuth sessions)
               └── optional external change-management API
 ```
 
-- **Auth**: NextAuth v5 credentials provider, bcrypt password hashes, role-based access. Five failed sign-ins lock the account for 15 minutes (kept in Redis).
+- **Auth**: NextAuth v5 credentials provider, bcrypt password hashes, role-based access. Five failed sign-ins lock the address for 15 minutes (kept in Redis); the login page says so, and failures count for unknown addresses too, so the message reveals no accounts. Unauthenticated API calls get `401` JSON.
 - **API**: REST under `/api/v1/*`. Every route goes through `apiHandler` (session check, Zod validation, rate limit, correlation ID, structured logging). Rate limits are in memory, per client address (100 requests a minute by default, lower on expensive routes); review decisions are counted per signed-in user instead.
 - **Change-management push**: `POST /api/v1/integrate/change-manager` sends approved/modified rules as JSON to `{CHANGE_MANAGER_API_URL}/api/rules/import`; `GET /api/v1/integrate/status` probes `{CHANGE_MANAGER_API_URL}/api/health`. Any system exposing those two endpoints works. With `CHANGE_MANAGER_API_URL` unset the integration is off.
 - **Container hardening**: all services drop all capabilities and set `no-new-privileges`; the app runs read-only as a non-root user with tmpfs for `/tmp` and `.next/cache`; Postgres creates a separate least-privilege `fwmigrate` role (`postgres/init-user.sh`) that the app uses. Host ports bind to `127.0.0.1` only.
@@ -203,7 +204,7 @@ npm run dev               # http://localhost:3004
 | `LLM_PROVIDER` | no | `none` (default), `ollama` or `claude` |
 | `OLLAMA_HOST` / `OLLAMA_MODEL` | no | Default `http://host.docker.internal:11434` / `qwen2.5:14b` |
 | `LLM_TIMEOUT_MS` / `LLM_CONCURRENCY` / `LLM_EXPLAIN_MAX_RULES` | no | Per-call timeout (90000), parallel calls (1; a local Ollama usually serves one request at a time, extra calls only queue and time out), rules explained per run (50) |
-| `OLLAMA_RELEASE_AFTER_BATCH` | no | Default `true`: unload the model when the explain job finishes, so a large local model frees its RAM at once; single suggestions keep Ollama's 5-minute keep-alive. `false` = keep it loaded |
+| `OLLAMA_RELEASE_AFTER_BATCH` | no | Default `true`: unload the model when the explain job finishes, so a large local model frees its RAM at once; a single "Explain with AI" on the review page keeps Ollama's 5-minute keep-alive. `false` = keep it loaded |
 | `CLAUDE_BRIDGE_URL` / `CLAUDE_BRIDGE_TOKEN` / `CLAUDE_MODEL` | no | LLM gateway URL, shared token, model alias |
 | `CHANGE_MANAGER_API_URL` / `CHANGE_MANAGER_API_KEY` | no | External change-management system and its bearer token (unset = integration off) |
 | `ENCRYPTION_KEY` | no | 64 hex chars, used by `src/lib/crypto.ts` |
@@ -221,7 +222,7 @@ npm run lint
 - `tests/generators/`: PAN-OS fixture -> FortiOS in detail, every source/target pair for valid references and leaked keywords, and output a device loads (placeholders for undefined names, FortiOS `edit 0`, same-platform service names).
 - `tests/validation/`: every generated config validates without errors; undefined references are errors, normal block syntax raises no warnings.
 - `tests/analysis/`: the analysis engine, object and group resolution, and the findings on every fixture.
-- `tests/lib/`: project status rules (re-runs never move a project back) and rate limits.
+- `tests/lib/`: project status rules (re-runs never move a project back), rate limits, role enforcement, and the enabled state pushed to Change Manager.
 - `tests/ui/`: vendor detection, file upload checks, the delete dialog and that every project table cascades on delete, Change Manager push gating, safe sign-in redirects.
 - `__tests__/`: network utilities, crypto.
 - `tests/vendors.test.ts`: the vendor list, Prisma enum, API validation and this README agree.
@@ -238,7 +239,7 @@ Be aware of what it does not do:
 - **Security policy only.** NAT rules are parsed and counted but not translated; routes, interfaces, VPNs and device settings are out of scope.
 - **Syntax validation is static.** It checks the generated config's structure and references, not whether a real device accepts it. Test on a lab device before production.
 - **Single instance.** Rate limits and the AI explanation queue are kept in memory, which suits the one-container deployment in `docker-compose.yml`, not a cluster.
-- **Users are created in the database.** There is no registration page and no user management UI; the seed creates one admin.
+- **No self-registration or password reset by e-mail.** An admin creates users and sets passwords; the seed creates the first admin.
 - **Batches cannot be deleted from the UI** yet; deleting a project does not change the batch that created it.
 - AI explanations are generated text and can be wrong. They never change a config, and they are always labelled.
 
