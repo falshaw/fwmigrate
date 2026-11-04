@@ -131,7 +131,7 @@ Set `LLM_PROVIDER` in `.env` and recreate the app container (`docker compose up 
 |---|---|
 | `none` (default) | No LLM. Import, analysis, translation, review and export all work. |
 | `ollama` | Calls Ollama's API at `OLLAMA_HOST` (default `http://host.docker.internal:11434`) with `OLLAMA_MODEL`. |
-| `claude` | Sends `POST {CLAUDE_BRIDGE_URL}/generate` with an `X-Bridge-Token` header to a host-side gateway, so the container never holds a model API key. A compatible gateway is in the companion repo [secure-private-ai](https://github.com/falshaw/secure-private-ai). |
+| `claude` | Sends `POST {CLAUDE_BRIDGE_URL}/generate` with an `X-Bridge-Token` header to a host-side gateway, so the container never holds a model API key. You run the gateway yourself; it is not part of this repo. |
 
 Translation returns immediately either way. With an LLM configured, per-rule explanations run afterwards as a background job, bounded by `LLM_TIMEOUT_MS` per call, `LLM_CONCURRENCY` parallel calls and `LLM_EXPLAIN_MAX_RULES` rules per run; the translate page shows progress. LLM calls sit behind a circuit breaker.
 
